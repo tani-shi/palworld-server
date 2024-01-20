@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+dist/
+build/
+*.egg-info/
+*.egg
+*.tar.gz
+*.tar.bz2
+*.tar.xz
+*.zip
+*.tgz
+*.txz
+
+# Environments
+venv/
+env/
+.venv/
+ENV/
+.ENV/
+.env
+
+# Visual Studio Code
+.vscode/
+
+# PyCharm
+.idea/
+
+# Jupyter Notebook
+.ipynb_checkpoints/
+
+# Compiled Python files
+*.pyc
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+
+# Editor-specific files
+*.swp
+*~
