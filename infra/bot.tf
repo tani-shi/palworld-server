@@ -144,6 +144,7 @@ resource "aws_lambda_function" "bot_worker" {
       INSTANCE_ID       = aws_instance.server.id
       SECURITY_GROUP_ID = aws_security_group.server.id
       GAME_PORT         = var.game_port
+      QUERY_PORT        = var.query_port
     }
   }
 }

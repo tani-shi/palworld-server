@@ -102,6 +102,12 @@ variable "game_port" {
   default = 8211
 }
 
+variable "query_port" {
+  description = "Steam query port the server also binds; a client needs it to finish connecting"
+  type        = number
+  default     = 27015
+}
+
 variable "maintenance_time" {
   description = "systemd OnCalendar expression for the nightly backup + restart that flushes the server's memory growth"
   type        = string

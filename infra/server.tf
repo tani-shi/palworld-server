@@ -22,15 +22,20 @@ resource "aws_vpc_security_group_egress_rule" "all" {
   cidr_ipv4         = "0.0.0.0/0"
 }
 
+// A player gets the game port and the Steam query port: joining by address uses
+// the former, joining through the server list queries the latter.
 resource "aws_vpc_security_group_ingress_rule" "game" {
-  for_each = toset(var.player_cidrs)
+  for_each = {
+    for pair in setproduct(var.player_cidrs, [var.game_port, var.query_port]) :
+    "${pair[0]}-${pair[1]}" => { cidr = pair[0], port = pair[1] }
+  }
 
   security_group_id = aws_security_group.server.id
   description       = "palworld player"
   ip_protocol       = "udp"
-  from_port         = var.game_port
-  to_port           = var.game_port
-  cidr_ipv4         = each.value
+  from_port         = each.value.port
+  to_port           = each.value.port
+  cidr_ipv4         = each.value.cidr
 }
 
 resource "aws_vpc_security_group_ingress_rule" "ssh" {
@@ -50,8 +55,8 @@ resource "aws_vpc_security_group_ingress_rule" "community_browser" {
   security_group_id = aws_security_group.server.id
   description       = "steam query"
   ip_protocol       = "udp"
-  from_port         = 27015
-  to_port           = 27015
+  from_port         = var.query_port
+  to_port           = var.query_port
   cidr_ipv4         = "0.0.0.0/0"
 }
 
