@@ -1,12 +1,11 @@
-// Passwords travel through SSM rather than user_data: user_data is readable by
-// anything that can reach the instance metadata service.
+// The password travels through SSM rather than user_data: user_data is readable
+// by anything that can reach the instance metadata service. It stays in SSM
+// afterwards as the only readable copy -- the value provisioning baked into
+// PalWorldSettings.ini cannot be recovered from anywhere else.
 resource "aws_ssm_parameter" "server_secrets" {
-  name = "/${var.project}/${var.server_version}/server_secrets"
-  type = "SecureString"
-  value = jsonencode({
-    admin_password  = local.admin_password
-    server_password = var.server_password
-  })
+  name  = "/${var.project}/${var.server_version}/server_secrets"
+  type  = "SecureString"
+  value = jsonencode({ admin_password = random_password.admin.result })
 }
 
 // An empty AdminPassword leaves nobody able to claim admin rights in game, so
@@ -17,10 +16,6 @@ resource "random_password" "admin" {
   // PalWorldSettings.ini packs every option into a single comma-separated line
   // of quoted values, so punctuation in the password breaks the parser.
   special = false
-}
-
-locals {
-  admin_password = coalesce(var.admin_password, random_password.admin.result)
 }
 
 data "aws_kms_alias" "ssm" {

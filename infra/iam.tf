@@ -19,6 +19,8 @@ resource "aws_iam_role_policy_attachment" "ssm_core" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+// Reading the admin password while provisioning is the only API call the
+// instance makes on its own.
 data "aws_iam_policy_document" "server" {
   statement {
     sid       = "ReadServerSecrets"
@@ -30,12 +32,6 @@ data "aws_iam_policy_document" "server" {
     sid       = "DecryptServerSecrets"
     actions   = ["kms:Decrypt"]
     resources = [data.aws_kms_alias.ssm.target_key_arn]
-  }
-
-  statement {
-    sid       = "WriteSaveBackups"
-    actions   = ["s3:PutObject", "s3:GetObject", "s3:ListBucket"]
-    resources = [aws_s3_bucket.saves.arn, "${aws_s3_bucket.saves.arn}/*"]
   }
 }
 

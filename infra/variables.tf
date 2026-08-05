@@ -11,7 +11,7 @@ variable "project" {
 }
 
 variable "server_version" {
-  description = "Palworld release the instance runs; the bot resolves instances by the tag palworld-server-<server_version>"
+  description = "Palworld release the instance runs; names the instance tag and the SSM parameter"
   type        = string
   default     = "1.0"
 }
@@ -28,40 +28,6 @@ variable "root_volume_size" {
   default     = 60
 }
 
-variable "vpc_cidr" {
-  type    = string
-  default = "10.20.0.0/16"
-}
-
-variable "subnet_cidr" {
-  type    = string
-  default = "10.20.1.0/24"
-}
-
-variable "player_cidrs" {
-  description = "CIDRs allowed to reach the game port; the Discord bot appends to this rule at runtime"
-  type        = list(string)
-  default     = []
-}
-
-variable "ssh_cidrs" {
-  description = "CIDRs allowed to SSH in; leave empty and use SSM Session Manager instead"
-  type        = list(string)
-  default     = []
-}
-
-variable "key_name" {
-  description = "EC2 key pair for SSH; null disables SSH key injection"
-  type        = string
-  default     = null
-}
-
-variable "publish_to_community_browser" {
-  description = "Open 27015/udp so the server is listed in the in-game community browser"
-  type        = bool
-  default     = false
-}
-
 variable "server_name" {
   type    = string
   default = "Palworld Server"
@@ -75,20 +41,6 @@ variable "server_description" {
 variable "max_players" {
   type    = number
   default = 16
-}
-
-variable "admin_password" {
-  description = "Password that grants admin rights in game; null generates one into SSM"
-  type        = string
-  sensitive   = true
-  default     = null
-}
-
-variable "server_password" {
-  description = "Join password; empty string leaves the security group as the only gate"
-  type        = string
-  sensitive   = true
-  default     = ""
 }
 
 variable "discord_public_key" {
@@ -108,20 +60,8 @@ variable "query_port" {
   default     = 27015
 }
 
-variable "maintenance_time" {
-  description = "systemd OnCalendar expression for the nightly backup + restart that flushes the server's memory growth; name a timezone, since the instance clock is UTC"
-  type        = string
-  default     = "*-*-* 05:00:00 Asia/Tokyo"
-}
-
-variable "backup_retention_days" {
-  description = "Days before save archives in S3 expire"
+variable "snapshot_retention_count" {
+  description = "Snapshots DLM keeps before deleting the oldest; each extra day of history costs one day of storage"
   type        = number
-  default     = 30
-}
-
-variable "update_on_boot" {
-  description = "Run steamcmd app_update before each service start so a bot-driven start picks up patches"
-  type        = bool
-  default     = true
+  default     = 7
 }

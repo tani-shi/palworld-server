@@ -5,6 +5,8 @@ locals {
   bot_enabled = var.discord_public_key == null ? 0 : 1
 }
 
+data "aws_caller_identity" "current" {}
+
 data "archive_file" "bot" {
   count = local.bot_enabled
 

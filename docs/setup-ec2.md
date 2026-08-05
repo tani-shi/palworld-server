@@ -104,17 +104,17 @@ WantedBy=multi-user.target
 - `-useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS` はサーバー tick に直結する。付けない場合と比べて体感が大きく変わる
 - 停止は `SIGINT`。`SIGTERM` ではセーブが中断される
 
-## 5. 定期メンテナンス
+## 5. メンテナンス
 
-メモリ使用量が稼働時間に比例して増え続け、放置すると 5〜7 日で OOM する。日次でバックアップ →
-再起動を行う。
+メモリ使用量が稼働時間に比例して増え続け、放置すると 5〜7 日で OOM する。定期再起動の仕組みは
+持たず、**遊ばないときは停止する**ことで回避する。連続稼働させたい場合だけ再起動を挟む。
 
 ```sh
-systemctl stop palworld
-tar czf /tmp/save.tar.gz -C /home/palworld/PalServer/Pal/Saved SaveGames
-aws s3 cp /tmp/save.tar.gz "s3://<bucket>/saves/1.0/$(date -u +%Y%m%dT%H%M%SZ).tar.gz"
-systemctl start palworld
+sudo systemctl restart palworld
 ```
+
+セーブのバックアップはインスタンス上では行わない。DLM が日次でスナップショットを取る。復元手順は
+[README.md](../README.md) の「セーブの復元」にある。
 
 ## 6. アップデート
 

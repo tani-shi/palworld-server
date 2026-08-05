@@ -20,7 +20,7 @@ echo steam steam/license note '' | debconf-set-selections
 apt-get install -y steamcmd lib32gcc-s1 xdg-user-dirs jq unzip python3
 
 # Noble dropped the awscli package from the archive, so the CLI comes from
-# upstream. Both the secrets lookup below and the nightly S3 backup need it.
+# upstream. The secrets lookup below needs it.
 curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscliv2.zip
 unzip -q /tmp/awscliv2.zip -d /tmp
 /tmp/aws/install
@@ -70,7 +70,6 @@ SERVER_DESC='${server_desc}' \
 MAX_PLAYERS='${max_players}' \
 GAME_PORT='${game_port}' \
 ADMIN_PASSWORD="$(jq -r .admin_password <<<"$SECRETS")" \
-SERVER_PASSWORD="$(jq -r .server_password <<<"$SECRETS")" \
 python3 <<'PYTHON'
 import os
 import pathlib
@@ -86,12 +85,14 @@ settings = {
     "ServerName": quoted(os.environ["SERVER_NAME"]),
     "ServerDescription": quoted(os.environ["SERVER_DESC"]),
     "AdminPassword": quoted(os.environ["ADMIN_PASSWORD"]),
-    "ServerPassword": quoted(os.environ["SERVER_PASSWORD"]),
     "ServerPlayerMaxNum": os.environ["MAX_PLAYERS"],
     "PublicPort": os.environ["GAME_PORT"],
-    # Nothing here drives the server over the wire: maintenance goes through
-    # systemd and moderation through the in-game admin commands. RCON is also
-    # deprecated upstream and slated for removal.
+    # ServerPassword is left at its empty default: the security group is the gate,
+    # so a join password would only be a second thing to distribute and rotate.
+    #
+    # Nothing drives the server over the wire either -- moderation goes through
+    # the in-game admin commands. RCON is deprecated upstream and slated for
+    # removal.
     "RCONEnabled": "False",
     "RESTAPIEnabled": "False",
 }
@@ -108,21 +109,6 @@ for key, value in settings.items():
 path.write_text(text)
 PYTHON
 
-# user_data runs only on a fresh instance, so this restores the world exactly
-# when the instance was replaced. No archive means a new world -- either the
-# first launch, or every backup has passed the bucket's expiry.
-SAVE_PREFIX="s3://${backup_bucket}/saves/${server_version}/"
-LATEST_SAVE=$(aws s3 ls "$SAVE_PREFIX" --region ${aws_region} | sort | tail -1 | awk '{print $4}' || true)
-
-if [ -n "$LATEST_SAVE" ]; then
-  aws s3 cp "$SAVE_PREFIX$LATEST_SAVE" /tmp/restore.tar.gz --region ${aws_region}
-  # A failure here aborts provisioning on purpose: starting an empty world would
-  # invite players to build on a save that is about to be replaced.
-  tar xzf /tmp/restore.tar.gz -C "$PAL_DIR/Pal/Saved"
-  chown -R $PAL_USER:$PAL_USER "$PAL_DIR/Pal/Saved"
-  rm -f /tmp/restore.tar.gz
-fi
-
 cat >/etc/systemd/system/palworld.service <<UNIT
 [Unit]
 Description=Palworld dedicated server
@@ -134,9 +120,10 @@ Type=simple
 User=$PAL_USER
 Group=$PAL_USER
 WorkingDirectory=$PAL_DIR
-%{ if update_on_boot ~}
+# A client that has patched cannot join a server that has not, so every start
+# updates first. Leading "-" because a Steam outage must not keep the server
+# down: the old build still serves the clients that have not patched yet.
 ExecStartPre=-$STEAMCMD +force_install_dir $PAL_DIR +login anonymous +app_update ${steam_app_id} validate +quit
-%{ endif ~}
 ExecStart=$PAL_DIR/PalServer.sh -port=${game_port} -players=${max_players} -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS
 # SIGINT lets the engine flush the world to disk; SIGTERM corrupts in-flight saves.
 KillSignal=SIGINT
@@ -149,58 +136,5 @@ LimitNOFILE=100000
 WantedBy=multi-user.target
 UNIT
 
-cat >/usr/local/bin/palworld-maintenance <<SCRIPT
-#!/usr/bin/env bash
-set -euo pipefail
-
-# The server's memory footprint grows for as long as it runs; a nightly restart
-# keeps it below the instance's 16 GiB.
-#
-# The restart is a trap rather than the last line: under set -e a failed archive
-# or upload would otherwise leave the server stopped until somebody noticed,
-# which costs more than a missing backup.
-trap 'systemctl start palworld' EXIT
-
-systemctl stop palworld
-
-ARCHIVE=\$(mktemp /tmp/palworld-save-XXXXXX.tar.gz)
-tar czf "\$ARCHIVE" -C "$PAL_DIR/Pal/Saved" SaveGames
-
-# An archive missing the world would upload happily and then, being the newest,
-# be the one a replacement instance restores from.
-case "\$(tar tzf "\$ARCHIVE")" in
-  *Level.sav*) ;;
-  *) echo "archive holds no world; refusing to upload" >&2; exit 1 ;;
-esac
-
-aws s3 cp "\$ARCHIVE" \
-  "s3://${backup_bucket}/saves/${server_version}/\$(date -u +%Y%m%dT%H%M%SZ).tar.gz" \
-  --region ${aws_region}
-rm -f "\$ARCHIVE"
-SCRIPT
-chmod +x /usr/local/bin/palworld-maintenance
-
-cat >/etc/systemd/system/palworld-maintenance.service <<UNIT
-[Unit]
-Description=Back up Palworld saves to S3 and restart the server
-
-[Service]
-Type=oneshot
-ExecStart=/usr/local/bin/palworld-maintenance
-UNIT
-
-cat >/etc/systemd/system/palworld-maintenance.timer <<UNIT
-[Unit]
-Description=Nightly Palworld backup and restart
-
-[Timer]
-OnCalendar=${maintenance_time}
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-UNIT
-
 systemctl daemon-reload
 systemctl enable --now palworld.service
-systemctl enable --now palworld-maintenance.timer

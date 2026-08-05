@@ -8,8 +8,9 @@ data "aws_ami" "ubuntu" {
   }
 }
 
-// Rules live in standalone resources so the ingress the Discord bot adds at
-// runtime is not reverted on the next apply.
+// Terraform declares no ingress at all: every player address arrives through
+// the bot's `register` at runtime. A second, Terraform-managed list of the same
+// rules would only be another place for the allowlist to disagree with itself.
 resource "aws_security_group" "server" {
   name        = "${var.project}-server"
   description = "Palworld dedicated server"
@@ -22,61 +23,23 @@ resource "aws_vpc_security_group_egress_rule" "all" {
   cidr_ipv4         = "0.0.0.0/0"
 }
 
-// A player gets the game port and the Steam query port: joining by address uses
-// the former, joining through the server list queries the latter.
-resource "aws_vpc_security_group_ingress_rule" "game" {
-  for_each = {
-    for pair in setproduct(var.player_cidrs, [var.game_port, var.query_port]) :
-    "${pair[0]}-${pair[1]}" => { cidr = pair[0], port = pair[1] }
-  }
-
-  security_group_id = aws_security_group.server.id
-  description       = "palworld player"
-  ip_protocol       = "udp"
-  from_port         = each.value.port
-  to_port           = each.value.port
-  cidr_ipv4         = each.value.cidr
-}
-
-resource "aws_vpc_security_group_ingress_rule" "ssh" {
-  for_each = toset(var.ssh_cidrs)
-
-  security_group_id = aws_security_group.server.id
-  description       = "ssh"
-  ip_protocol       = "tcp"
-  from_port         = 22
-  to_port           = 22
-  cidr_ipv4         = each.value
-}
-
-resource "aws_vpc_security_group_ingress_rule" "community_browser" {
-  count = var.publish_to_community_browser ? 1 : 0
-
-  security_group_id = aws_security_group.server.id
-  description       = "steam query"
-  ip_protocol       = "udp"
-  from_port         = var.query_port
-  to_port           = var.query_port
-  cidr_ipv4         = "0.0.0.0/0"
-}
-
 resource "aws_instance" "server" {
-  ami                         = data.aws_ami.ubuntu.id
-  instance_type               = var.instance_type
-  subnet_id                   = aws_subnet.public.id
-  vpc_security_group_ids      = [aws_security_group.server.id]
-  iam_instance_profile        = aws_iam_instance_profile.server.name
-  key_name                    = var.key_name
-  user_data                   = local.user_data
-  user_data_replace_on_change = false
+  ami                    = data.aws_ami.ubuntu.id
+  instance_type          = var.instance_type
+  subnet_id              = aws_subnet.public.id
+  vpc_security_group_ids = [aws_security_group.server.id]
+  iam_instance_profile   = aws_iam_instance_profile.server.name
+  user_data              = local.user_data
 
-  // Keeping the root volume after termination would strand it: a replacement
-  // instance builds a fresh one and never reads the old saves. Continuity comes
-  // from the S3 archive that user_data restores instead.
+  // prevent_destroy below only binds Terraform; this is what stops a terminate
+  // issued from the console or the CLI.
+  disable_api_termination = true
+
+  // The world lives here and nowhere else, so the volume outlives the instance.
   root_block_device {
     volume_type           = "gp3"
     volume_size           = var.root_volume_size
-    delete_on_termination = true
+    delete_on_termination = false
   }
 
   metadata_options {
@@ -84,6 +47,15 @@ resource "aws_instance" "server" {
   }
 
   tags = { Name = "palworld-server-${var.server_version}" }
+
+  // This instance's disk holds the only copy of the world, so nothing routine
+  // may replace it. A moved AMI id and an edited user_data both would, and
+  // neither is worth the world -- rebuilding is a deliberate operation that
+  // starts from a snapshot.
+  lifecycle {
+    prevent_destroy = true
+    ignore_changes  = [ami, user_data]
+  }
 }
 
 resource "aws_eip" "server" {
@@ -102,9 +74,5 @@ locals {
     max_players       = var.max_players
     game_port         = var.game_port
     secrets_parameter = aws_ssm_parameter.server_secrets.name
-    backup_bucket     = aws_s3_bucket.saves.bucket
-    server_version    = var.server_version
-    maintenance_time  = var.maintenance_time
-    update_on_boot    = var.update_on_boot
   })
 }

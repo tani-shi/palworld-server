@@ -7,14 +7,13 @@ output "instance_id" {
   value = aws_instance.server.id
 }
 
-output "instance_name" {
-  description = "Tag the Discord bot resolves; set DEFAULT_VERSION in the bot env to var.server_version"
-  value       = aws_instance.server.tags["Name"]
+output "root_volume_id" {
+  description = "The volume that holds the world; the target of a snapshot restore"
+  value       = aws_instance.server.root_block_device[0].volume_id
 }
 
 output "security_group_id" {
-  description = "Set as AWS_SECURITY_GROUP_ID for the bot's register command"
-  value       = aws_security_group.server.id
+  value = aws_security_group.server.id
 }
 
 output "server_address" {
@@ -29,8 +28,4 @@ output "bot_webhook_url" {
 output "server_secrets_parameter" {
   description = "SSM parameter holding the admin password; read it with aws ssm get-parameter --with-decryption"
   value       = aws_ssm_parameter.server_secrets.name
-}
-
-output "backup_bucket" {
-  value = aws_s3_bucket.saves.bucket
 }
