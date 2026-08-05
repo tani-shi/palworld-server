@@ -91,6 +91,12 @@ variable "server_password" {
   default     = ""
 }
 
+variable "discord_public_key" {
+  description = "Public key of the Discord application, used to verify request signatures; null skips the bot entirely"
+  type        = string
+  default     = null
+}
+
 variable "game_port" {
   type    = number
   default = 8211

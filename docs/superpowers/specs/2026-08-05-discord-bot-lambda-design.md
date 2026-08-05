@@ -43,7 +43,7 @@ follow-up の宛先に必要な `application_id` は interaction のペイロー
 
 ランタイムは Python 3.13 / arm64、メモリは 256MB。webhook のタイムアウトは 10 秒、worker は 30 秒。
 
-Discord への follow-up は標準ライブラリの `urllib.request` で送る。`requests` を追加すると Lambda の zip に載る依存が増えるだけで、リクエストは1種類しかない。
+Discord への follow-up は標準ライブラリの `urllib.request` で送る。`requests` を追加すると Lambda の zip に載る依存が増えるだけで、リクエストは1種類しかない。ただし Discord の前段にいる Cloudflare が `urllib` の既定 User-Agent を error 1010 で拒否するため、`User-Agent` を明示的に付ける必要がある。
 
 ## モジュール構成
 
@@ -59,8 +59,7 @@ bot/
 │   └── access.py        # Security Group の IP 許可の追加・削除・一覧
 ├── scripts/
 │   ├── build.sh         # Lambda 用の依存を含むビルドディレクトリを作る
-│   └── deploy_commands.py  # スラッシュコマンド定義を Discord に登録
-└── tests/
+    └── deploy_commands.py  # スラッシュコマンド定義を Discord に登録
 ```
 
 既存の `bot/aws.py` は EC2 のライフサイクル操作と Security Group 操作が同居しているため、扱うエンティティで `server.py` と `access.py` に割り直す。`bot/main.py` は役割が消えるので削除する。
@@ -108,18 +107,22 @@ Discord から自分のグローバル IP は取得できないため、`registe
 | `ec2:AuthorizeSecurityGroupIngress` / `ec2:RevokeSecurityGroupIngress` | 対象 Security Group の ARN |
 | `ec2:DescribeInstances` / `ec2:DescribeInstanceStatus` / `ec2:DescribeSecurityGroups` | `*`（これらはリソース指定が効かない） |
 
-Lambda の環境変数は4つ。いずれも秘密情報ではない。
+環境変数はいずれも秘密情報ではなく、関数ごとに必要なものだけを渡す。
 
-- `DISCORD_PUBLIC_KEY` — 署名検証に使う。公開鍵なので秘密ではない
-- `INSTANCE_ID`
-- `SECURITY_GROUP_ID`
-- `GAME_PORT` — Terraform の `var.game_port` を単一の出典にするため環境変数で渡す
+| 関数 | 環境変数 |
+| --- | --- |
+| webhook | `DISCORD_PUBLIC_KEY`（公開鍵なので秘密ではない）、`WORKER_FUNCTION_NAME` |
+| worker | `INSTANCE_ID`、`SECURITY_GROUP_ID`、`GAME_PORT` |
+
+`GAME_PORT` は Terraform の `var.game_port` を単一の出典にするために渡す。
 
 Discord の Bot Token は実行時に使わない（follow-up は interaction token で認証する）。`deploy_commands.py` を実行する人の手元にだけ置く。`bot/.env.example` は同スクリプト用の `DISCORD_APPLICATION_ID` と `DISCORD_BOT_TOKEN` のみを残す。
 
 ## Terraform への追加
 
 `infra/bot.tf` を新設し、Lambda 2本・Function URL・IAM ロール・環境変数を定義する。出力に Function URL を追加する。
+
+bot 関連のリソースは `terraform.tfvars` の `discord_public_key` が未設定なら作らない。Discord アプリを登録する前にゲームサーバーだけを apply できるようにするため、および bot を作らない apply でビルド成果物を要求しないためである。
 
 `var.server_version` は S3 のバックアップ接頭辞・SSM パラメータのパス・インスタンスの Name タグで使い続けるので残す。bot がインスタンス ID を直接受け取るようになるため、bot 側のタグ検索と `DEFAULT_VERSION` だけがなくなる。
 
@@ -151,12 +154,7 @@ uv pip install --python-platform aarch64-manylinux2014 --python-version 3.13 --t
 
 ## テスト
 
-`pytest` と `moto` を使う。
-
-- `server.py` / `access.py` — moto で EC2 と Security Group を立て、状態遷移とルールの増減を検証
-- `commands.py` の入力検証 — 純粋関数なのでパラメータ化テストで境界を網羅（`0.0.0.0/0`、プライベートアドレス、IPv6、不正な文字列）
-- `interactions.py` の署名検証 — テスト用の鍵ペアで、正しい署名と改竄した署名の両方
-- `webhook.py` / `worker.py` — Lambda のイベント JSON を直接渡す。follow-up の HTTP はモックする
+自動テストは作らない。コマンドの仕様が固まっており、ロジックを継続的に変更する予定がないため。動作確認は `terraform validate` と `plan`、ビルドスクリプトの実行、および署名付きの合成ペイロードでハンドラを直接叩くことで行う。
 
 ## 廃止するもの
 

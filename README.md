@@ -5,7 +5,7 @@ Palworld 1.0 の専用サーバーを AWS 上で運用するためのリポジ�
 | ディレクトリ | 役割 |
 | --- | --- |
 | `infra/` | Terraform。VPC / Security Group / EC2 / Elastic IP / セーブデータ用 S3 / IAM |
-| `bot/` | Discord bot。EC2 の起動・停止・状態確認と、プレイヤー IP の Security Group 登録 |
+| `bot/` | Discord bot（Lambda）。EC2 の起動・停止・状態確認と、プレイヤー IP の Security Group 登録 |
 | `docs/` | 手動構築手順（Terraform を使わない場合や、障害時の確認用） |
 
 ## 構成
@@ -26,13 +26,7 @@ terraform init
 terraform apply
 ```
 
-出力される値を bot の `.env` に設定する。
-
-| 出力 | bot の環境変数 |
-| --- | --- |
-| `security_group_id` | `AWS_SECURITY_GROUP_ID` |
-| `server_version`（変数） | `DEFAULT_VERSION` |
-| `server_address` | プレイヤーへ案内する接続先 |
+`server_address` の出力をプレイヤーへの接続先として案内する。bot が必要とする値は Terraform が Lambda の環境変数へ直接渡すので、手で写す設定はない。
 
 インスタンスには Session Manager で接続する（`ssh_cidrs` は既定で空）。
 
@@ -42,25 +36,43 @@ aws ssm start-session --target "$(terraform output -raw instance_id)"
 
 `user_data` はインスタンスの初回起動時にのみ実行される。テンプレートを変更した場合は、インスタンスを作り直すか、対象の変更を手動で適用する。
 
-## bot の起動
+## bot のデプロイ
+
+bot は Discord のスラッシュコマンドを Lambda で受ける。常駐プロセスはなく、AWS の認証情報も実行ロールに任せるので手元に置く鍵はない。
+
+Discord Developer Portal でアプリケーションを作り、**Public Key** を `infra/terraform.tfvars` の `discord_public_key` に設定してから次を実行する。
+
+```sh
+bot/scripts/build.sh   # Lambda 用の zip 素材を作る
+cd infra && terraform apply
+```
+
+`discord_public_key` が未設定の間は bot のリソースが作られないので、Discord アプリを用意する前にゲームサーバーだけを apply できる。
+
+apply 後、出力された `bot_webhook_url` を Discord Developer Portal の **Interactions Endpoint URL** に設定する。保存時に Discord が検証リクエストを送るので、ここで疎通が確認できる。
+
+最後にスラッシュコマンドを登録する。この操作にだけ Bot Token が必要で、AWS 上には保存しない。
 
 ```sh
 cd bot
-cp .env.example .env   # TOKEN などを設定
-uv sync
-uv run main.py
+cp .env.example .env   # DISCORD_APPLICATION_ID と DISCORD_BOT_TOKEN を設定
+uv run --env-file .env scripts/deploy_commands.py
 ```
+
+`bot/src/palworld_bot/` を変更したときは `build.sh` → `terraform apply` を再実行する。コマンドの定義（名前・引数・説明）を変えたときだけ `deploy_commands.py` も実行する。
 
 ### コマンド
 
 | コマンド | 動作 |
 | --- | --- |
-| `/palworld start [version]` | EC2 を起動 |
-| `/palworld stop [version]` | EC2 を停止 |
-| `/palworld status [version]` | 状態と接続先アドレスを表示 |
+| `/palworld start` | EC2 を起動 |
+| `/palworld stop` | EC2 を停止 |
+| `/palworld status` | 状態・ヘルスチェック・接続先アドレスを表示 |
 | `/palworld register <ip>` | その IP から 8211/udp への接続を Security Group に許可 |
+| `/palworld unregister <ip>` | 許可を取り消す |
+| `/palworld allowlist` | 許可済みの IP を一覧表示 |
 
-`version` を省略すると `DEFAULT_VERSION` が使われ、`palworld-server-<version>` という Name タグのインスタンスを操作する。
+権限による制限はなく、ギルドのメンバーは全員が実行できる。`register` に渡せるのはグローバルな IPv4 の単一アドレス（`/32`）だけで、範囲指定・プライベートアドレス・IPv6 は拒否される。自分のアドレスは <https://checkip.amazonaws.com> などで調べる。
 
 ## サーバーの運用
 

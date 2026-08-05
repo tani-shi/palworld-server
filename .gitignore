@@ -53,3 +53,7 @@ Thumbs.db
 !*.tfvars.example
 crash.log
 
+
+# Lambda build artefacts
+bot/build/
+bot/build.zip
