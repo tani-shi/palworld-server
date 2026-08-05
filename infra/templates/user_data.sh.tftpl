@@ -1,0 +1,155 @@
+#!/usr/bin/env bash
+set -euxo pipefail
+
+export DEBIAN_FRONTEND=noninteractive
+
+PAL_USER=palworld
+PAL_DIR=/home/palworld/PalServer
+STEAMCMD=/usr/games/steamcmd
+
+# SteamCMD ships as a 32-bit binary, so i386 must be enabled before apt can
+# resolve its dependencies.
+dpkg --add-architecture i386
+apt-get update
+apt-get install -y software-properties-common
+add-apt-repository -y multiverse
+apt-get update
+
+echo steam steam/question select "I AGREE" | debconf-set-selections
+echo steam steam/license note '' | debconf-set-selections
+apt-get install -y steamcmd lib32gcc-s1 xdg-user-dirs jq unzip python3 awscli
+
+id -u $PAL_USER >/dev/null 2>&1 || useradd -m -s /bin/bash $PAL_USER
+
+sudo -u $PAL_USER $STEAMCMD \
+  +force_install_dir "$PAL_DIR" \
+  +login anonymous \
+  +app_update ${steam_app_id} validate \
+  +quit
+
+SECRETS=$(aws ssm get-parameter \
+  --region ${aws_region} \
+  --name "${secrets_parameter}" \
+  --with-decryption \
+  --query Parameter.Value \
+  --output text)
+
+CONFIG_DIR="$PAL_DIR/Pal/Saved/Config/LinuxServer"
+CONFIG="$CONFIG_DIR/PalWorldSettings.ini"
+install -d -o $PAL_USER -g $PAL_USER "$CONFIG_DIR"
+[ -f "$CONFIG" ] || install -o $PAL_USER -g $PAL_USER \
+  "$PAL_DIR/DefaultPalWorldSettings.ini" "$CONFIG"
+
+CONFIG="$CONFIG" \
+SERVER_NAME='${server_name}' \
+SERVER_DESC='${server_desc}' \
+MAX_PLAYERS='${max_players}' \
+GAME_PORT='${game_port}' \
+ADMIN_PASSWORD="$(jq -r .admin_password <<<"$SECRETS")" \
+SERVER_PASSWORD="$(jq -r .server_password <<<"$SECRETS")" \
+python3 <<'PYTHON'
+import os
+import pathlib
+import re
+
+path = pathlib.Path(os.environ["CONFIG"])
+text = path.read_text()
+
+def quoted(value):
+    return '"{}"'.format(value.replace('"', ""))
+
+settings = {
+    "ServerName": quoted(os.environ["SERVER_NAME"]),
+    "ServerDescription": quoted(os.environ["SERVER_DESC"]),
+    "AdminPassword": quoted(os.environ["ADMIN_PASSWORD"]),
+    "ServerPassword": quoted(os.environ["SERVER_PASSWORD"]),
+    "ServerPlayerMaxNum": os.environ["MAX_PLAYERS"],
+    "PublicPort": os.environ["GAME_PORT"],
+    # Nothing here drives the server over the wire: maintenance goes through
+    # systemd and moderation through the in-game admin commands. RCON is also
+    # deprecated upstream and slated for removal.
+    "RCONEnabled": "False",
+    "RESTAPIEnabled": "False",
+}
+
+for key, value in settings.items():
+    text, replaced = re.subn(
+        r'(?<=[,(]){}=("[^"]*"|[^,)]*)'.format(key), "{}={}".format(key, value), text, count=1
+    )
+    # Pocketpair renames and drops keys between releases; a stale key must not
+    # abort the whole provisioning run.
+    if not replaced:
+        print("skipped key absent from DefaultPalWorldSettings.ini:", key)
+
+path.write_text(text)
+PYTHON
+
+cat >/etc/systemd/system/palworld.service <<UNIT
+[Unit]
+Description=Palworld dedicated server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=$PAL_USER
+Group=$PAL_USER
+WorkingDirectory=$PAL_DIR
+%{ if update_on_boot ~}
+ExecStartPre=-$STEAMCMD +force_install_dir $PAL_DIR +login anonymous +app_update ${steam_app_id} validate +quit
+%{ endif ~}
+ExecStart=$PAL_DIR/PalServer.sh -port=${game_port} -players=${max_players} -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS
+# SIGINT lets the engine flush the world to disk; SIGTERM corrupts in-flight saves.
+KillSignal=SIGINT
+TimeoutStopSec=120
+Restart=on-failure
+RestartSec=10
+LimitNOFILE=100000
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+
+cat >/usr/local/bin/palworld-maintenance <<SCRIPT
+#!/usr/bin/env bash
+set -euo pipefail
+
+# The server's memory footprint grows for as long as it runs; a nightly restart
+# keeps it below the instance's 16 GiB.
+systemctl stop palworld
+
+ARCHIVE=\$(mktemp /tmp/palworld-save-XXXXXX.tar.gz)
+tar czf "\$ARCHIVE" -C "$PAL_DIR/Pal/Saved" SaveGames
+aws s3 cp "\$ARCHIVE" \
+  "s3://${backup_bucket}/saves/${server_version}/\$(date -u +%Y%m%dT%H%M%SZ).tar.gz" \
+  --region ${aws_region}
+rm -f "\$ARCHIVE"
+
+systemctl start palworld
+SCRIPT
+chmod +x /usr/local/bin/palworld-maintenance
+
+cat >/etc/systemd/system/palworld-maintenance.service <<UNIT
+[Unit]
+Description=Back up Palworld saves to S3 and restart the server
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/palworld-maintenance
+UNIT
+
+cat >/etc/systemd/system/palworld-maintenance.timer <<UNIT
+[Unit]
+Description=Nightly Palworld backup and restart
+
+[Timer]
+OnCalendar=${maintenance_time}
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+UNIT
+
+systemctl daemon-reload
+systemctl enable --now palworld.service
+systemctl enable --now palworld-maintenance.timer

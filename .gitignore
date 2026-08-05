@@ -44,3 +44,12 @@ Thumbs.db
 # Editor-specific files
 *.swp
 *~
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+crash.log
+

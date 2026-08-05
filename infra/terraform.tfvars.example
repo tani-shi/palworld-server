@@ -1,0 +1,19 @@
+aws_region     = "ap-northeast-1"
+server_version = "1.0"
+
+server_name        = "My Palworld Server"
+server_description = "Palworld 1.0"
+max_players        = 16
+
+# Access is gated by the security group below, so both passwords are optional:
+# admin_password is generated into SSM when unset, and an empty server_password
+# lets registered IPs join without one.
+# admin_password  = "pick-your-own"
+# server_password = "pick-your-own"
+
+# Seed the players who may connect; the Discord bot's `register` command adds more.
+player_cidrs = []
+
+# Leave empty to administer the box through SSM Session Manager instead of SSH.
+ssh_cidrs = []
+# key_name = "my-key-pair"
