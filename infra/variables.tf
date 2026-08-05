@@ -109,9 +109,9 @@ variable "query_port" {
 }
 
 variable "maintenance_time" {
-  description = "systemd OnCalendar expression for the nightly backup + restart that flushes the server's memory growth"
+  description = "systemd OnCalendar expression for the nightly backup + restart that flushes the server's memory growth; name a timezone, since the instance clock is UTC"
   type        = string
-  default     = "*-*-* 05:00:00"
+  default     = "*-*-* 05:00:00 Asia/Tokyo"
 }
 
 variable "backup_retention_days" {

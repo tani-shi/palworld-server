@@ -155,16 +155,28 @@ set -euo pipefail
 
 # The server's memory footprint grows for as long as it runs; a nightly restart
 # keeps it below the instance's 16 GiB.
+#
+# The restart is a trap rather than the last line: under set -e a failed archive
+# or upload would otherwise leave the server stopped until somebody noticed,
+# which costs more than a missing backup.
+trap 'systemctl start palworld' EXIT
+
 systemctl stop palworld
 
 ARCHIVE=\$(mktemp /tmp/palworld-save-XXXXXX.tar.gz)
 tar czf "\$ARCHIVE" -C "$PAL_DIR/Pal/Saved" SaveGames
+
+# An archive missing the world would upload happily and then, being the newest,
+# be the one a replacement instance restores from.
+case "\$(tar tzf "\$ARCHIVE")" in
+  *Level.sav*) ;;
+  *) echo "archive holds no world; refusing to upload" >&2; exit 1 ;;
+esac
+
 aws s3 cp "\$ARCHIVE" \
   "s3://${backup_bucket}/saves/${server_version}/\$(date -u +%Y%m%dT%H%M%SZ).tar.gz" \
   --region ${aws_region}
 rm -f "\$ARCHIVE"
-
-systemctl start palworld
 SCRIPT
 chmod +x /usr/local/bin/palworld-maintenance
 
