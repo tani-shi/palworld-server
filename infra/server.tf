@@ -65,10 +65,13 @@ resource "aws_instance" "server" {
   user_data                   = local.user_data
   user_data_replace_on_change = false
 
+  // Keeping the root volume after termination would strand it: a replacement
+  // instance builds a fresh one and never reads the old saves. Continuity comes
+  // from the S3 archive that user_data restores instead.
   root_block_device {
     volume_type           = "gp3"
     volume_size           = var.root_volume_size
-    delete_on_termination = false
+    delete_on_termination = true
   }
 
   metadata_options {

@@ -27,7 +27,8 @@
 
 ## 1. SteamCMD と依存パッケージ
 
-SteamCMD は 32bit バイナリなので i386 アーキテクチャを有効にする。
+SteamCMD は 32bit バイナリなので i386 アーキテクチャを有効にする。AWS CLI は Ubuntu 24.04 の
+リポジトリに存在しないため、公式インストーラを使う。
 
 ```sh
 sudo dpkg --add-architecture i386
@@ -38,12 +39,17 @@ sudo apt-get update
 
 echo steam steam/question select "I AGREE" | sudo debconf-set-selections
 echo steam steam/license note '' | sudo debconf-set-selections
-sudo apt-get install -y steamcmd lib32gcc-s1 xdg-user-dirs jq python3 awscli
+sudo apt-get install -y steamcmd lib32gcc-s1 xdg-user-dirs jq unzip python3
+
+curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp
+sudo /tmp/aws/install
 ```
 
 ## 2. サーバー本体のインストール
 
-root で動かさないよう専用ユーザーを作る。
+root で動かさないよう専用ユーザーを作る。起動直後は `app_update` が `Missing configuration` で
+失敗することがあり、同じコマンドが後の試行では通る。失敗したら数十秒待って再実行する。
 
 ```sh
 sudo useradd -m -s /bin/bash palworld

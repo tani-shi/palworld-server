@@ -1,3 +1,8 @@
+output "aws_region" {
+  description = "Pass to the aws CLI: the default profile's region is unrelated to where this stack lives"
+  value       = var.aws_region
+}
+
 output "instance_id" {
   value = aws_instance.server.id
 }

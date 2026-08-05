@@ -17,15 +17,34 @@ apt-get update
 
 echo steam steam/question select "I AGREE" | debconf-set-selections
 echo steam steam/license note '' | debconf-set-selections
-apt-get install -y steamcmd lib32gcc-s1 xdg-user-dirs jq unzip python3 awscli
+apt-get install -y steamcmd lib32gcc-s1 xdg-user-dirs jq unzip python3
+
+# Noble dropped the awscli package from the archive, so the CLI comes from
+# upstream. Both the secrets lookup below and the nightly S3 backup need it.
+curl -fsSL https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp
+/tmp/aws/install
+rm -rf /tmp/aws /tmp/awscliv2.zip
 
 id -u $PAL_USER >/dev/null 2>&1 || useradd -m -s /bin/bash $PAL_USER
 
-sudo -u $PAL_USER $STEAMCMD \
-  +force_install_dir "$PAL_DIR" \
-  +login anonymous \
-  +app_update ${steam_app_id} validate \
-  +quit
+# Within the first minutes of boot app_update exits non-zero with "Missing
+# configuration" and the identical command succeeds later, so the install is
+# retried rather than trusted once.
+for attempt in 1 2 3 4 5; do
+  if sudo -u $PAL_USER $STEAMCMD \
+      +force_install_dir "$PAL_DIR" \
+      +login anonymous \
+      +app_update ${steam_app_id} validate \
+      +quit; then
+    break
+  fi
+  echo "steamcmd attempt $attempt failed; retrying"
+  sleep 30
+done
+
+# Stop here rather than installing units around a server that is not there.
+test -x "$PAL_DIR/PalServer.sh"
 
 SECRETS=$(aws ssm get-parameter \
   --region ${aws_region} \
@@ -83,6 +102,21 @@ for key, value in settings.items():
 
 path.write_text(text)
 PYTHON
+
+# user_data runs only on a fresh instance, so this restores the world exactly
+# when the instance was replaced. No archive means a new world -- either the
+# first launch, or every backup has passed the bucket's expiry.
+SAVE_PREFIX="s3://${backup_bucket}/saves/${server_version}/"
+LATEST_SAVE=$(aws s3 ls "$SAVE_PREFIX" --region ${aws_region} | sort | tail -1 | awk '{print $4}' || true)
+
+if [ -n "$LATEST_SAVE" ]; then
+  aws s3 cp "$SAVE_PREFIX$LATEST_SAVE" /tmp/restore.tar.gz --region ${aws_region}
+  # A failure here aborts provisioning on purpose: starting an empty world would
+  # invite players to build on a save that is about to be replaced.
+  tar xzf /tmp/restore.tar.gz -C "$PAL_DIR/Pal/Saved"
+  chown -R $PAL_USER:$PAL_USER "$PAL_DIR/Pal/Saved"
+  rm -f /tmp/restore.tar.gz
+fi
 
 cat >/etc/systemd/system/palworld.service <<UNIT
 [Unit]

@@ -12,10 +12,11 @@ Palworld 1.0 の専用サーバーを AWS 上で運用するためのリポジ�
 
 - **OS**: Ubuntu 24.04 LTS（SteamCMD が 32bit バイナリのため、i386 パッケージが揃う Ubuntu を採用。Amazon Linux 2023 は i686 パッケージを提供していない）
 - **インスタンス**: `m7i-flex.xlarge`（4 vCPU / 16 GiB）。公式推奨の 4 コア / 16 GB に合わせている
-- **ストレージ**: gp3 60 GiB（サーバー本体 15 GB + セーブ + アップデート時の一時領域）。`delete_on_termination = false`
+- **ストレージ**: gp3 60 GiB（サーバー本体 15 GB + セーブ + アップデート時の一時領域）。ルートボリュームはインスタンスと一緒に破棄する。置き換え後のインスタンスは古いボリュームを読まないので残しても孤児になるだけで、セーブの継続性は S3 からの復元で確保する
 - **ポート**: 8211/udp のみ。RCON と REST API は使わないので無効（RCON は非推奨で将来削除される。REST API は必要になったら `RESTAPIEnabled` を有効化する）
 - **アクセス制御**: 参加パスワードではなく Security Group の IP 許可で行う（`player_cidrs` と bot の `/palworld register`）。管理パスワードは未指定なら Terraform が生成して SSM に保存する
 - **運用**: 毎日 05:00（サーバー時刻）に systemd timer がセーブを S3 へバックアップしてからサーバーを再起動する（稼働時間に比例してメモリ使用量が増え続けるため）
+- **セーブの継続性**: インスタンス作り直し時に、`user_data` が S3 の最新アーカイブを展開してから起動する。巻き戻りは最後のバックアップまで（最大 1 日）。アーカイブが無ければ新規ワールドになる
 
 ## infra のデプロイ
 
@@ -31,8 +32,11 @@ terraform apply
 インスタンスには Session Manager で接続する（`ssh_cidrs` は既定で空）。
 
 ```sh
-aws ssm start-session --target "$(terraform output -raw instance_id)"
+aws ssm start-session --region "$(terraform output -raw aws_region)" \
+  --target "$(terraform output -raw instance_id)"
 ```
+
+`--region` は省略できない。省略すると `~/.aws/config` の既定リージョンに問い合わせ、そこにインスタンスが無いため `TargetNotConnected` になる（SSM は「存在しない」と「接続されていない」を区別しない）。
 
 `user_data` はインスタンスの初回起動時にのみ実行される。テンプレートを変更した場合は、インスタンスを作り直すか、対象の変更を手動で適用する。
 
@@ -87,7 +91,8 @@ sudo /usr/local/bin/palworld-maintenance  # 手動でバックアップ + 再起
 管理パスワードの確認。ゲーム内で `/AdminPassword <pw>` を実行すると `/Shutdown` `/Broadcast` `/KickPlayer` `/BanPlayer` `/Save` が使える。
 
 ```sh
-aws ssm get-parameter --name "$(terraform output -raw server_secrets_parameter)" \
+aws ssm get-parameter --region "$(terraform output -raw aws_region)" \
+  --name "$(terraform output -raw server_secrets_parameter)" \
   --with-decryption --query Parameter.Value --output text
 ```
 
