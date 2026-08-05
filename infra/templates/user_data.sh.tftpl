@@ -55,9 +55,14 @@ SECRETS=$(aws ssm get-parameter \
 
 CONFIG_DIR="$PAL_DIR/Pal/Saved/Config/LinuxServer"
 CONFIG="$CONFIG_DIR/PalWorldSettings.ini"
-install -d -o $PAL_USER -g $PAL_USER "$CONFIG_DIR"
-[ -f "$CONFIG" ] || install -o $PAL_USER -g $PAL_USER \
-  "$PAL_DIR/DefaultPalWorldSettings.ini" "$CONFIG"
+mkdir -p "$CONFIG_DIR"
+[ -f "$CONFIG" ] || cp "$PAL_DIR/DefaultPalWorldSettings.ini" "$CONFIG"
+
+# The server writes its world and its engine log directly under Pal/Saved, so
+# every directory on the way has to belong to it -- not just the leaf. Left
+# root-owned, the server still boots and answers packets, but no world is ever
+# created and clients hang on "connecting" with nothing logged anywhere.
+chown -R $PAL_USER:$PAL_USER "$PAL_DIR/Pal/Saved"
 
 CONFIG="$CONFIG" \
 SERVER_NAME='${server_name}' \
