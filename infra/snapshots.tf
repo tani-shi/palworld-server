@@ -1,8 +1,6 @@
-// Snapshots are the only copy of the world outside the instance's own disk.
-// They are taken by DLM rather than by a script on the box: rotation, retention
-// and error reporting are then AWS's behaviour, not ours to get right, and a
-// restore is the documented "snapshot -> volume -> attach" path rather than the
-// unpacking of an archive whose format we invented.
+// These are the only copy of the world outside the instance's own disk. DLM
+// takes them so that rotation and expiry are AWS behaviour, and so that a
+// restore follows the documented snapshot/volume/attach path.
 data "aws_iam_policy_document" "assume_dlm" {
   statement {
     actions = ["sts:AssumeRole"]
@@ -36,9 +34,8 @@ resource "aws_dlm_lifecycle_policy" "snapshots" {
     schedule {
       name = "daily"
 
-      // DLM reads times as UTC, and it snapshots attached volumes whether the
-      // instance runs or not, so the hour only decides how much play a restore
-      // can roll back -- not whether a snapshot happens at all.
+      // UTC. DLM snapshots attached volumes whether the instance runs or not, so
+      // the hour only decides how much play a restore can roll back.
       create_rule {
         interval      = 24
         interval_unit = "HOURS"

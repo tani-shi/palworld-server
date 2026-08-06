@@ -1,9 +1,9 @@
 TF = terraform -chdir=infra
 
-# Never call aws without this. Dropping --region falls back to the default
-# profile, which points at another region, and SSM then answers
-# TargetNotConnected -- indistinguishable from a broken agent. AWS_REGION in the
-# environment does not override the profile either.
+# Never call aws without this. Without --region the CLI uses the default
+# profile's region, which is not this one, and SSM then answers
+# TargetNotConnected as if the agent were broken. AWS_REGION does not override
+# the profile.
 AWS = aws --region $(shell $(TF) output -raw aws_region)
 
 # Lazy on purpose: ":=" would run terraform on every invocation, including help,
@@ -24,11 +24,10 @@ DESC ?= manual
 
 # SSM has no synchronous form, so a command is sent, awaited, then read back.
 #
-# Two characters must stay out of the argument. A comma would be read as another
-# $(call) argument, so chain shell commands with && instead. A single quote would
-# close the quoting around --parameters below and hand the rest of the command to
-# the local shell, so quote with \" -- JSON turns it back into a plain quote for
-# the shell on the box.
+# Two characters must stay out of the argument. A comma is read as another
+# $(call) argument, so chain shell commands with &&. A single quote closes the
+# quoting around --parameters below and hands the rest to the local shell, so
+# quote with \" instead; JSON turns it back into a plain quote on the box.
 define ssm
 A="$(AWS)"; I="$(INSTANCE)"; \
 CMD=$$($$A ssm send-command --instance-ids $$I --document-name AWS-RunShellScript \
@@ -45,18 +44,17 @@ endef
 
 .DEFAULT_GOAL := help
 
-# Prerequisite of everything that talks to the box. Without it a stopped
-# instance answers InvalidInstanceId and a booting one answers
-# TargetNotConnected, neither of which says which of the two happened. Reaching
-# the agent also takes about 90 seconds after the instance reports running, so
-# the state alone is not enough to go on.
+# Prerequisite of everything that talks to the box. A stopped instance answers
+# InvalidInstanceId and a booting one TargetNotConnected, so the raw errors do
+# not say which happened. The agent also needs about 90 seconds after the
+# instance reports running, so checking the state alone is not enough.
 require-ssm:
 	@test "$$($(AWS) ssm describe-instance-information \
 	  --filters Key=InstanceIds,Values=$(INSTANCE) \
 	  --query 'InstanceInformationList[0].PingStatus' --output text)" = Online \
 	  || { echo "not reachable over SSM; the instance is $$($(AWS) ec2 describe-instances \
 	    --instance-ids $(INSTANCE) --query 'Reservations[0].Instances[0].State.Name' \
-	    --output text) -- run make start, or wait for the agent if it just booted"; exit 1; }
+	    --output text). Run make start, or wait for the agent if it just booted"; exit 1; }
 
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"} \
@@ -85,7 +83,7 @@ bot: ## Build the Lambda package and deploy it
 bot-commands: ## Register the slash commands with Discord (needs bot/.env)
 	cd bot && uv run --env-file .env scripts/deploy_commands.py
 
-##@ Server -- players use /palworld in Discord; these are for when it is unreachable
+##@ Server (players use /palworld in Discord; these are for when it is unreachable)
 status: ## Instance state, address and health checks
 	@A="$(AWS)"; I="$(INSTANCE)"; \
 	$$A ec2 describe-instances --instance-ids $$I \
@@ -156,9 +154,9 @@ snapshot: ## Take a snapshot now (DESC="before the update")
 	  --query '[SnapshotId,State]' --output text
 
 ##@ Restore
-# require-ssm is what keeps this off a stopped instance, which matters more here
-# than elsewhere: the clone carries the root volume's filesystem UUID, so a boot
-# with it attached can mount the clone as root and run the server from it.
+# require-ssm keeps this off a stopped instance. The clone carries the root
+# volume's filesystem UUID, so a boot with it attached can mount the clone as
+# root and run the server from it.
 restore-attach: require-ssm ## Clone a snapshot and mount it read-only (SNAP=snap-...)
 	@test -n "$(SNAP)" || { echo "usage: make restore-attach SNAP=<snapshot-id>"; exit 1; }
 	@A="$(AWS)"; I="$(INSTANCE)"; \

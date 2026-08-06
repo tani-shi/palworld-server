@@ -1,6 +1,5 @@
-// The bot is skipped until a Discord application exists, so the game server can
-// be applied on its own -- which also means an apply without the bot does not
-// require the build artefact below.
+// Skipped until a Discord application exists, so the game server can be applied
+// on its own. Such an apply also needs no build artefact.
 locals {
   bot_enabled = var.discord_public_key == null ? 0 : 1
 }

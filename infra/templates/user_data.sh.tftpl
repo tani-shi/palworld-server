@@ -29,8 +29,7 @@ rm -rf /tmp/aws /tmp/awscliv2.zip
 id -u $PAL_USER >/dev/null 2>&1 || useradd -m -s /bin/bash $PAL_USER
 
 # Within the first minutes of boot app_update exits non-zero with "Missing
-# configuration" and the identical command succeeds later, so the install is
-# retried rather than trusted once.
+# configuration", and the identical command succeeds later, so it is retried.
 for attempt in 1 2 3 4 5; do
   if sudo -u $PAL_USER $STEAMCMD \
       +force_install_dir "$PAL_DIR" \
@@ -43,7 +42,7 @@ for attempt in 1 2 3 4 5; do
   sleep 30
 done
 
-# Stop here rather than installing units around a server that is not there.
+# Stop before installing units around a server that is not there.
 test -x "$PAL_DIR/PalServer.sh"
 
 SECRETS=$(aws ssm get-parameter \
@@ -59,7 +58,7 @@ mkdir -p "$CONFIG_DIR"
 [ -f "$CONFIG" ] || cp "$PAL_DIR/DefaultPalWorldSettings.ini" "$CONFIG"
 
 # The server writes its world and its engine log directly under Pal/Saved, so
-# every directory on the way has to belong to it -- not just the leaf. Left
+# every directory on the way has to belong to it, not just the leaf. Left
 # root-owned, the server still boots and answers packets, but no world is ever
 # created and clients hang on "connecting" with nothing logged anywhere.
 chown -R $PAL_USER:$PAL_USER "$PAL_DIR/Pal/Saved"
@@ -87,12 +86,10 @@ settings = {
     "AdminPassword": quoted(os.environ["ADMIN_PASSWORD"]),
     "ServerPlayerMaxNum": os.environ["MAX_PLAYERS"],
     "PublicPort": os.environ["GAME_PORT"],
-    # ServerPassword is left at its empty default: the security group is the gate,
-    # so a join password would only be a second thing to distribute and rotate.
+    # ServerPassword stays at its empty default: the security group is the gate.
     #
-    # Nothing drives the server over the wire either -- moderation goes through
-    # the in-game admin commands. RCON is deprecated upstream and slated for
-    # removal.
+    # Nothing drives the server over the wire either. Moderation goes through the
+    # in-game admin commands. RCON is deprecated upstream and slated for removal.
     "RCONEnabled": "False",
     "RESTAPIEnabled": "False",
 }

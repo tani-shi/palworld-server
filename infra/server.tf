@@ -8,9 +8,9 @@ data "aws_ami" "ubuntu" {
   }
 }
 
-// Terraform declares no ingress at all: every player address arrives through
-// the bot's `register` at runtime. A second, Terraform-managed list of the same
-// rules would only be another place for the allowlist to disagree with itself.
+// No ingress is declared here. Player addresses are added at runtime by the
+// bot's `register`, and a second Terraform-managed copy of the same rules would
+// drift from it.
 resource "aws_security_group" "server" {
   name        = "${var.project}-server"
   description = "Palworld dedicated server"
@@ -48,10 +48,9 @@ resource "aws_instance" "server" {
 
   tags = { Name = "palworld-server-${var.server_version}" }
 
-  // This instance's disk holds the only copy of the world, so nothing routine
-  // may replace it. A moved AMI id and an edited user_data both would, and
-  // neither is worth the world -- rebuilding is a deliberate operation that
-  // starts from a snapshot.
+  // This disk holds the only copy of the world. A moved AMI id or an edited
+  // user_data would each replace the instance, so both are ignored; rebuilding
+  // is done by hand, starting from a snapshot.
   lifecycle {
     prevent_destroy = true
     ignore_changes  = [ami, user_data]

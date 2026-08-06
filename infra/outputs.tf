@@ -20,8 +20,8 @@ output "server_address" {
   value = "${aws_eip.server.public_ip}:${var.game_port}"
 }
 
-// The Makefile opens both ports for an address, so it needs them separately --
-// server_address carries only the game port.
+// The Makefile opens both ports for an address. server_address carries only the
+// game port.
 output "game_port" {
   value = var.game_port
 }
