@@ -24,6 +24,7 @@ SAVES       = $(PAL_DIR)/Pal/Saved
 CLONE       = /mnt/restore
 DROP_IN_DIR = /etc/systemd/system/palworld.service.d
 DROP_IN     = $(DROP_IN_DIR)/no-update.conf
+GAMEDATA_DROP_IN = $(DROP_IN_DIR)/gamedata-api.conf
 
 DESC ?= manual
 
@@ -202,6 +203,12 @@ autoupdate-off: require-ssm ## Stop app_update from running on the next start
 autoupdate-on: require-ssm ## Let app_update run on start again
 	@$(call ssm,"rm -f $(DROP_IN) && systemctl daemon-reload && echo enabled")
 
+gamedata-on: require-ssm ## Expose /v1/api/game-data (restarts the game server)
+	@$(call ssm,"mkdir -p $(DROP_IN_DIR) && echo \"[Service]\" > $(GAMEDATA_DROP_IN) && echo \"ExecStart=\" >> $(GAMEDATA_DROP_IN) && echo \"ExecStart=$(PAL_DIR)/PalServer.sh -port=$(GAME_PORT) -players=$(MAX_PLAYERS) -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS -EnableGameDataAPI\" >> $(GAMEDATA_DROP_IN) && systemctl daemon-reload && systemctl restart palworld && echo enabled")
+
+gamedata-off: require-ssm ## Hide /v1/api/game-data again (restarts the game server)
+	@$(call ssm,"rm -f $(GAMEDATA_DROP_IN) && systemctl daemon-reload && systemctl restart palworld && echo disabled")
+
 ##@ Snapshots
 snapshots: ## List the snapshots of the world volume
 	@$(AWS) ec2 describe-snapshots --owner-ids self \
@@ -253,6 +260,6 @@ restore-clean: require-ssm ## Unmount the clone and delete it
 	echo "deleted $$VOL"
 
 .PHONY: help require-ssm init fmt plan apply bot-deploy bot-deploy-commands status start stop \
-	allowlist allow revoke session logs password autoupdate-off autoupdate-on \
+	allowlist allow revoke session logs password autoupdate-off autoupdate-on gamedata-on gamedata-off \
 	snapshots snapshot-create restore-attach restore-list restore-world restore-clean \
 	api-info api-metrics api-players api-settings api-game-data api-announce
