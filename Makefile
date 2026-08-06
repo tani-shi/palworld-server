@@ -151,6 +151,10 @@ api-settings: require-ssm ## Effective server settings
 api-game-data: require-ssm ## Snapshot of every actor in the world
 	@$(call restapi,"$(CURL) $(API)/game-data")
 
+api-announce: require-ssm ## Broadcast a message in game (MSG="server going down")
+	@test -n "$(MSG)" || { echo 'usage: make api-announce MSG="text"'; exit 1; }
+	@$(call restapi,"echo $(shell printf %s '$(MSG)' | base64 | tr -d '\n') | base64 -d >/tmp/announce.txt && jq -Rs \"{message:.}\" </tmp/announce.txt >/tmp/announce.json && $(CURL) -X POST -H \"Content-Type: application/json\" -d @/tmp/announce.json $(API)/announce && rm -f /tmp/announce.txt /tmp/announce.json")
+
 ##@ Access
 allowlist: ## List the addresses allowed to reach the server
 	@$(AWS) ec2 describe-security-groups --group-ids $(SG) \
@@ -245,4 +249,4 @@ restore-clean: require-ssm ## Unmount the clone and delete it
 .PHONY: help require-ssm init fmt plan apply bot-deploy bot-deploy-commands status start stop \
 	allowlist allow revoke session logs password autoupdate-off autoupdate-on \
 	snapshots snapshot-create restore-attach restore-list restore-world restore-clean \
-	api-info api-metrics api-players api-settings api-game-data
+	api-info api-metrics api-players api-settings api-game-data api-announce
