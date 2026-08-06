@@ -53,3 +53,8 @@ output "rest_api_port" {
 output "max_players" {
   value = var.max_players
 }
+
+output "system_prompt_parameter" {
+  description = "SSM parameter holding the /palworld ask system prompt; push changes with make prompt-deploy"
+  value       = aws_ssm_parameter.ask_system_prompt.name
+}

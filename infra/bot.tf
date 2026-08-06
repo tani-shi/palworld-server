@@ -138,3 +138,18 @@ resource "aws_lambda_function_url" "bot_webhook" {
   function_name      = aws_lambda_function.bot_webhook.function_name
   authorization_type = "NONE"
 }
+
+// The prompt lives in the repository and is pushed with `make prompt-deploy`,
+// so Terraform seeds the value once and then leaves it alone. Managing the
+// value here would mean an apply for every wording change, and would revert
+// any prompt pushed since the last apply.
+resource "aws_ssm_parameter" "ask_system_prompt" {
+  name  = "/${var.project}/${var.server_version}/ask_system_prompt"
+  type  = "String"
+  tier  = "Advanced"
+  value = file("${path.module}/../bot/prompts/ask.md")
+
+  lifecycle {
+    ignore_changes = [value]
+  }
+}

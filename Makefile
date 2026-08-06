@@ -18,6 +18,8 @@ REST_PORT   = $(shell $(TF) output -raw rest_api_port)
 MAX_PLAYERS = $(shell $(TF) output -raw max_players)
 BUCKET      = $(shell $(TF) output -raw command_output_bucket)
 REGION      = $(shell $(TF) output -raw aws_region)
+PROMPT_PARAM = $(shell $(TF) output -raw system_prompt_parameter)
+PROMPT_FILE  = bot/prompts/ask.md
 
 PAL_DIR     = /home/palworld/PalServer
 SAVES       = $(PAL_DIR)/Pal/Saved
@@ -118,6 +120,13 @@ bot-deploy: ## Build the Lambda package and deploy it
 
 bot-deploy-commands: ## Register the slash commands with Discord (needs bot/.env)
 	cd bot && uv run --env-file .env scripts/deploy_commands.py
+
+prompt: ## Show the system prompt the bot is running with
+	@$(AWS) ssm get-parameter --name $(PROMPT_PARAM) --query Parameter.Value --output text
+
+prompt-deploy: ## Push bot/prompts/ask.md as the system prompt (no redeploy needed)
+	@$(AWS) ssm put-parameter --name $(PROMPT_PARAM) --type String --tier Advanced \
+	  --overwrite --value "file://$(PROMPT_FILE)" --query Version --output text
 
 ##@ Server (players use /palworld in Discord; these are for when it is unreachable)
 status: ## Instance state, address and health checks
@@ -259,7 +268,7 @@ restore-clean: require-ssm ## Unmount the clone and delete it
 	$$A ec2 delete-volume --volume-id $$VOL; \
 	echo "deleted $$VOL"
 
-.PHONY: help require-ssm init fmt plan apply bot-deploy bot-deploy-commands status start stop \
+.PHONY: help require-ssm init fmt plan apply bot-deploy bot-deploy-commands prompt prompt-deploy status start stop \
 	allowlist allow revoke session logs password autoupdate-off autoupdate-on gamedata-on gamedata-off \
 	snapshots snapshot-create restore-attach restore-list restore-world restore-clean \
 	api-info api-metrics api-players api-settings api-game-data api-announce
