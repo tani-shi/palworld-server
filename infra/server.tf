@@ -72,6 +72,8 @@ locals {
     server_desc       = var.server_description
     max_players       = var.max_players
     game_port         = var.game_port
+    rest_api_port     = var.rest_api_port
+    idle_stop_seconds = var.idle_stop_seconds
     secrets_parameter = aws_ssm_parameter.server_secrets.name
   })
 }

@@ -19,8 +19,8 @@ resource "aws_iam_role_policy_attachment" "ssm_core" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
-// Reading the admin password while provisioning is the only API call the
-// instance makes on its own.
+// The instance reads the admin password to provision itself and to authenticate
+// its own idle check, and stops itself when that check finds nobody playing.
 data "aws_iam_policy_document" "server" {
   statement {
     sid       = "ReadServerSecrets"
@@ -32,6 +32,14 @@ data "aws_iam_policy_document" "server" {
     sid       = "DecryptServerSecrets"
     actions   = ["kms:Decrypt"]
     resources = [data.aws_kms_alias.ssm.target_key_arn]
+  }
+
+  // Narrowed to this one instance: the role is reachable from anything running
+  // on the box, and a wildcard would let it stop the rest of the account.
+  statement {
+    sid       = "StopWhenEmpty"
+    actions   = ["ec2:StopInstances"]
+    resources = ["arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/${aws_instance.server.id}"]
   }
 }
 

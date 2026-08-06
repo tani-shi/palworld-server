@@ -68,6 +68,7 @@ SERVER_NAME='${server_name}' \
 SERVER_DESC='${server_desc}' \
 MAX_PLAYERS='${max_players}' \
 GAME_PORT='${game_port}' \
+REST_API_PORT='${rest_api_port}' \
 ADMIN_PASSWORD="$(jq -r .admin_password <<<"$SECRETS")" \
 python3 <<'PYTHON'
 import os
@@ -88,10 +89,16 @@ settings = {
     "PublicPort": os.environ["GAME_PORT"],
     # ServerPassword stays at its empty default: the security group is the gate.
     #
-    # Nothing drives the server over the wire either. Moderation goes through the
-    # in-game admin commands. RCON is deprecated upstream and slated for removal.
+    # The REST API answers the idle check over the loopback address. It binds
+    # 0.0.0.0 and is not built to face the internet, so the security group must
+    # never gain a TCP rule for its port. RCON is deprecated upstream and slated
+    # for removal, and nothing here needs it.
     "RCONEnabled": "False",
-    "RESTAPIEnabled": "False",
+    "RESTAPIEnabled": "True",
+    # Pinned rather than left at the shipped default, because palworld-idle-stop
+    # reads the same port from Terraform and a default that moved upstream would
+    # make every check fail as if the server were empty.
+    "RESTAPIPort": os.environ["REST_API_PORT"],
 }
 
 for key, value in settings.items():
@@ -133,5 +140,74 @@ LimitNOFILE=100000
 WantedBy=multi-user.target
 UNIT
 
+cat >/usr/local/bin/palworld-idle-stop <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+MARK=/run/palworld-last-player
+NOW=$(date +%s)
+
+# /run is tmpfs, so the mark cannot outlive a stop: every boot starts a fresh
+# window instead of inheriting the silence that ended the previous session.
+[ -f $MARK ] || echo $NOW >$MARK
+
+SECRETS=$(aws ssm get-parameter \
+  --region ${aws_region} \
+  --name "${secrets_parameter}" \
+  --with-decryption \
+  --query Parameter.Value \
+  --output text)
+
+# An unreachable API counts as empty. The window is far longer than a boot that
+# includes a Steam update, so a server still starting is never cut off, while a
+# server that has hung and stopped answering is exactly one worth stopping.
+PLAYERS=$(curl -fsS --max-time 10 -u "admin:$(jq -r .admin_password <<<"$SECRETS")" \
+  http://127.0.0.1:${rest_api_port}/v1/api/metrics | jq -r .currentplayernum) ||
+  echo "no answer from the REST API; counting the server as empty"
+case $PLAYERS in '' | *[!0-9]*) PLAYERS=0 ;; esac
+
+if [ $PLAYERS -gt 0 ]; then
+  echo $NOW >$MARK
+  exit 0
+fi
+
+SINCE=$(cat $MARK)
+IDLE=$((NOW - SINCE))
+[ $IDLE -ge ${idle_stop_seconds} ] || exit 0
+
+TOKEN=$(curl -fsS -X PUT http://169.254.169.254/latest/api/token \
+  -H "X-aws-ec2-metadata-token-ttl-seconds: 60")
+INSTANCE=$(curl -fsS -H "X-aws-ec2-metadata-token: $TOKEN" \
+  http://169.254.169.254/latest/meta-data/instance-id)
+
+echo "empty for $IDLE seconds; stopping $INSTANCE"
+# Not "shutdown -h": disable_api_termination does not cover a shutdown started
+# by the operating system, so an instance whose shutdown behaviour is terminate
+# would destroy the volume holding the world. This call can only ever stop.
+aws ec2 stop-instances --region ${aws_region} --instance-ids $INSTANCE
+SCRIPT
+chmod +x /usr/local/bin/palworld-idle-stop
+
+cat >/etc/systemd/system/palworld-idle-stop.service <<UNIT
+[Unit]
+Description=Stop the instance once nobody is playing
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/palworld-idle-stop
+UNIT
+
+cat >/etc/systemd/system/palworld-idle-stop.timer <<UNIT
+[Unit]
+Description=Ask the server how many players are connected
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
+UNIT
+
 systemctl daemon-reload
-systemctl enable --now palworld.service
+systemctl enable --now palworld.service palworld-idle-stop.timer

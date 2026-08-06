@@ -18,7 +18,8 @@ Palworld 1.0 の専用サーバーを AWS 上で運用するリポジトリ。
 | ストレージ | gp3 60 GiB、`DeleteOnTermination=false` |
 | ポート | 8211/udp（ゲーム）、27015/udp（Steam クエリ）。どちらも許可済み IP のみ |
 | アクセス制御 | Security Group の IP 許可のみ。参加パスワードは使わない |
-| RCON / REST API | 無効 |
+| RCON | 無効 |
+| REST API | 有効。8212/tcp をループバックでのみ受ける。Security Group に tcp の穴は無い |
 
 ルールの入口は `/palworld register` だけで、Terraform は ingress を宣言しない。
 
@@ -53,12 +54,14 @@ bot のコードを変えたら `make bot-deploy`。コマンドの定義を変�
 
 Discord や Lambda が落ちているときは `make start` / `make stop` / `make allow IP=...`。
 
-- **遊び終わったら停止する。** メモリが稼働時間に比例して増え、5〜7 日で OOM する。定期再起動は無い
+- **プレイヤーが 60 分いないとインスタンスが自分を停止する。** 5 分ごとに REST API へ接続数を訊く `palworld-idle-stop.timer` が実機で動いている。ワールドは通常の停止と同じように保存される
+- 停止し忘れても止まるが、メモリは稼働時間に比例して増え 5〜7 日で OOM するので、遊び終わったら `stop` するのが早い。定期再起動は無い
+- 実機で 1 時間以上作業するときは `systemctl stop palworld-idle-stop.timer`。次の起動で自動的に戻る
 - `status` が `running` でもゲームサーバーが遊べるとは限らない。確認手段はクライアントで接続することだけ
 - ゲーム本体の更新は起動時に走る。クライアントにパッチが来たら `stop` → `start`。バージョンが合わないと接続できない
 - 管理パスワードは `make password`。ゲーム内で `/AdminPassword <pw>` を実行すると `/Shutdown` `/Broadcast` `/KickPlayer` `/BanPlayer` `/Save` が使える
 - 実機に入るのは `make session`（SSH は開けていない）
-- 設定: `/home/palworld/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini`
+- 設定: `/home/palworld/PalServer/Pal/Saved/Config/LinuxServer/PalWorldSettings.ini`。**書き換えは `systemctl stop palworld` してから。** サーバーは終了時にこのファイルを自分の設定で上書きするので、稼働中の編集は次の停止で消える
 - セーブ: `/home/palworld/PalServer/Pal/Saved/SaveGames/0/<world-id>/`
 
 ## 復元

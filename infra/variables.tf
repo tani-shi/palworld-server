@@ -59,6 +59,18 @@ variable "query_port" {
   default     = 27015
 }
 
+variable "rest_api_port" {
+  description = "TCP port the REST API binds; reached only over loopback, so it stays out of the security group"
+  type        = number
+  default     = 8212
+}
+
+variable "idle_stop_seconds" {
+  description = "Seconds without a player before the instance stops itself"
+  type        = number
+  default     = 3600
+}
+
 variable "snapshot_retention_count" {
   description = "Snapshots DLM keeps before deleting the oldest; each extra day of history costs one day of storage"
   type        = number
