@@ -39,3 +39,17 @@ output "server_secrets_parameter" {
   description = "SSM parameter holding the admin password; read it with aws ssm get-parameter --with-decryption"
   value       = aws_ssm_parameter.server_secrets.name
 }
+
+output "command_output_bucket" {
+  description = "Run Command writes stdout here; callers read it back because SSM truncates the inline output at 24,000 characters"
+  value       = aws_s3_bucket.command_output.id
+}
+
+output "rest_api_port" {
+  value = var.rest_api_port
+}
+
+// The game-data drop-in restates the whole ExecStart line, which carries this.
+output "max_players" {
+  value = var.max_players
+}
