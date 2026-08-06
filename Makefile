@@ -63,7 +63,9 @@ API  = http://127.0.0.1:$(REST_PORT)/v1/api
 # endpoints share this path rather than only the large one: two paths would
 # mean remembering which endpoint is safe to read inline. The object key is
 # looked up rather than assembled, because the layout Run Command writes under
-# the prefix is not part of its API contract.
+# the prefix is not part of its API contract. "None" is checked alongside the
+# empty string because --output text prints that word, not nothing, when the
+# query matches no object.
 define restapi
 A="$(AWS)"; I="$(INSTANCE)"; B="$(BUCKET)"; \
 CMD=$$($$A ssm send-command --instance-ids $$I --document-name AWS-RunShellScript \
@@ -76,7 +78,7 @@ if ! $$A ssm wait command-executed --command-id $$CMD --instance-id $$I; then \
 fi; \
 KEY=$$($$A s3api list-objects-v2 --bucket $$B --prefix restapi/$$CMD \
   --query "Contents[?ends_with(Key, 'stdout')].Key" --output text); \
-test -n "$$KEY" || { echo "the command wrote no stdout" >&2; exit 1; }; \
+case $$KEY in '' | None) echo "the command wrote no stdout" >&2; exit 1 ;; esac; \
 $$A s3 cp s3://$$B/$$KEY -
 endef
 
@@ -169,7 +171,7 @@ api-game-data: require-ssm ## Snapshot of every actor in the world
 # an empty announcement with no error.
 api-announce: require-ssm ## Broadcast a message in game (MSG="server going down")
 	@test -n "$(MSG)" || { echo 'usage: make api-announce MSG="text"'; exit 1; }
-	@$(call restapi,"echo $(shell printf %s '$(subst ','\'',$(MSG))' | base64 | tr -d '\n') | base64 -d >/tmp/announce.txt && jq -Rs \"{message:.}\" </tmp/announce.txt >/tmp/announce.json && $(CURL) -X POST -H \"Content-Type: application/json\" -d @/tmp/announce.json $(API)/announce; RC=$$?; rm -f /tmp/announce.txt /tmp/announce.json; exit $$RC")
+	@$(call restapi,"echo $(shell printf %s '$(subst ','\'',$(MSG))' | base64 | tr -d '\n') | base64 -d >/tmp/announce.txt && jq -Rs \"{message:.}\" </tmp/announce.txt >/tmp/announce.json && $(CURL) -X POST -H \"Content-Type: application/json\" -d @/tmp/announce.json $(API)/announce && echo announced; RC=$$?; rm -f /tmp/announce.txt /tmp/announce.json; exit $$RC")
 
 ##@ Access
 allowlist: ## List the addresses allowed to reach the server
