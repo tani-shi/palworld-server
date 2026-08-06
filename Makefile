@@ -14,8 +14,13 @@ SG         = $(shell $(TF) output -raw security_group_id)
 SECRET     = $(shell $(TF) output -raw server_secrets_parameter)
 GAME_PORT  = $(shell $(TF) output -raw game_port)
 QUERY_PORT = $(shell $(TF) output -raw query_port)
+REST_PORT   = $(shell $(TF) output -raw rest_api_port)
+MAX_PLAYERS = $(shell $(TF) output -raw max_players)
+BUCKET      = $(shell $(TF) output -raw command_output_bucket)
+REGION      = $(shell $(TF) output -raw aws_region)
 
-SAVES       = /home/palworld/PalServer/Pal/Saved
+PAL_DIR     = /home/palworld/PalServer
+SAVES       = $(PAL_DIR)/Pal/Saved
 CLONE       = /mnt/restore
 DROP_IN_DIR = /etc/systemd/system/palworld.service.d
 DROP_IN     = $(DROP_IN_DIR)/no-update.conf
@@ -40,6 +45,36 @@ else \
     --query '[StandardOutputContent,StandardErrorContent]' --output text >&2; \
   exit 1; \
 fi
+endef
+
+# Read on the box so the admin password never reaches this machine. The
+# expansion stays inside the single-quoted --parameters below, so the local
+# shell leaves it alone and the instance is what evaluates it.
+PW   = $$(aws ssm get-parameter --region $(REGION) --name $(SECRET) --with-decryption --query Parameter.Value --output text | jq -r .admin_password)
+CURL = curl -fsS -u \"admin:$(PW)\"
+API  = http://127.0.0.1:$(REST_PORT)/v1/api
+
+# Same shape as ssm above, but the output comes back through S3. The inline
+# StandardOutputContent stops at 24,000 characters and game-data passes that
+# with one player online, so reading it inline would silently truncate. All six
+# endpoints share this path rather than only the large one: two paths would
+# mean remembering which endpoint is safe to read inline. The object key is
+# looked up rather than assembled, because the layout Run Command writes under
+# the prefix is not part of its API contract.
+define restapi
+A="$(AWS)"; I="$(INSTANCE)"; B="$(BUCKET)"; \
+CMD=$$($$A ssm send-command --instance-ids $$I --document-name AWS-RunShellScript \
+  --output-s3-bucket-name $$B --output-s3-key-prefix restapi \
+  --parameters 'commands=[$(1)]' --query Command.CommandId --output text); \
+if ! $$A ssm wait command-executed --command-id $$CMD --instance-id $$I; then \
+  $$A ssm get-command-invocation --command-id $$CMD --instance-id $$I \
+    --query StandardErrorContent --output text >&2; \
+  exit 1; \
+fi; \
+KEY=$$($$A s3api list-objects-v2 --bucket $$B --prefix restapi/$$CMD \
+  --query "Contents[?ends_with(Key, 'stdout')].Key" --output text); \
+test -n "$$KEY" || { echo "the command wrote no stdout" >&2; exit 1; }; \
+$$A s3 cp s3://$$B/$$KEY -
 endef
 
 .DEFAULT_GOAL := help
@@ -99,6 +134,22 @@ start: ## Start the instance
 stop: ## Stop the instance
 	@$(AWS) ec2 stop-instances --instance-ids $(INSTANCE) \
 	  --query 'StoppingInstances[0].CurrentState.Name' --output text
+
+##@ REST API
+api-info: require-ssm ## Server version, name and world id
+	@$(call restapi,"$(CURL) $(API)/info")
+
+api-metrics: require-ssm ## FPS, player count, uptime, base camps, in-game day
+	@$(call restapi,"$(CURL) $(API)/metrics")
+
+api-players: require-ssm ## Players connected right now
+	@$(call restapi,"$(CURL) $(API)/players")
+
+api-settings: require-ssm ## Effective server settings
+	@$(call restapi,"$(CURL) $(API)/settings")
+
+api-game-data: require-ssm ## Snapshot of every actor in the world
+	@$(call restapi,"$(CURL) $(API)/game-data")
 
 ##@ Access
 allowlist: ## List the addresses allowed to reach the server
@@ -193,4 +244,5 @@ restore-clean: require-ssm ## Unmount the clone and delete it
 
 .PHONY: help require-ssm init fmt plan apply bot-deploy bot-deploy-commands status start stop \
 	allowlist allow revoke session logs password autoupdate-off autoupdate-on \
-	snapshots snapshot-create restore-attach restore-list restore-world restore-clean
+	snapshots snapshot-create restore-attach restore-list restore-world restore-clean \
+	api-info api-metrics api-players api-settings api-game-data
