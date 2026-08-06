@@ -1,14 +1,6 @@
-// Skipped until a Discord application exists, so the game server can be applied
-// on its own. Such an apply also needs no build artefact.
-locals {
-  bot_enabled = var.discord_public_key == null ? 0 : 1
-}
-
 data "aws_caller_identity" "current" {}
 
 data "archive_file" "bot" {
-  count = local.bot_enabled
-
   type        = "zip"
   source_dir  = "${path.module}/../bot/build"
   output_path = "${path.module}/../bot/build.zip"
@@ -26,38 +18,28 @@ data "aws_iam_policy_document" "assume_lambda" {
 }
 
 resource "aws_iam_role" "bot_webhook" {
-  count = local.bot_enabled
-
   name               = "${var.project}-bot-webhook"
   assume_role_policy = data.aws_iam_policy_document.assume_lambda.json
 }
 
 resource "aws_iam_role" "bot_worker" {
-  count = local.bot_enabled
-
   name               = "${var.project}-bot-worker"
   assume_role_policy = data.aws_iam_policy_document.assume_lambda.json
 }
 
 resource "aws_iam_role_policy_attachment" "bot_webhook_logs" {
-  count = local.bot_enabled
-
-  role       = aws_iam_role.bot_webhook[0].name
+  role       = aws_iam_role.bot_webhook.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
 resource "aws_iam_role_policy_attachment" "bot_worker_logs" {
-  count = local.bot_enabled
-
-  role       = aws_iam_role.bot_worker[0].name
+  role       = aws_iam_role.bot_worker.name
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
 }
 
 resource "aws_iam_role_policy" "bot_webhook" {
-  count = local.bot_enabled
-
   name = "${var.project}-bot-webhook"
-  role = aws_iam_role.bot_webhook[0].id
+  role = aws_iam_role.bot_webhook.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -65,16 +47,14 @@ resource "aws_iam_role_policy" "bot_webhook" {
       Sid      = "HandOffToWorker"
       Effect   = "Allow"
       Action   = "lambda:InvokeFunction"
-      Resource = aws_lambda_function.bot_worker[0].arn
+      Resource = aws_lambda_function.bot_worker.arn
     }]
   })
 }
 
 resource "aws_iam_role_policy" "bot_worker" {
-  count = local.bot_enabled
-
   name = "${var.project}-bot-worker"
-  role = aws_iam_role.bot_worker[0].id
+  role = aws_iam_role.bot_worker.id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -107,12 +87,10 @@ resource "aws_iam_role_policy" "bot_worker" {
 }
 
 resource "aws_lambda_function" "bot_webhook" {
-  count = local.bot_enabled
-
   function_name    = "${var.project}-bot-webhook"
-  role             = aws_iam_role.bot_webhook[0].arn
-  filename         = data.archive_file.bot[0].output_path
-  source_code_hash = data.archive_file.bot[0].output_base64sha256
+  role             = aws_iam_role.bot_webhook.arn
+  filename         = data.archive_file.bot.output_path
+  source_code_hash = data.archive_file.bot.output_base64sha256
   handler          = "palworld_bot.webhook.handle"
   runtime          = "python3.13"
   architectures    = ["arm64"]
@@ -122,18 +100,16 @@ resource "aws_lambda_function" "bot_webhook" {
   environment {
     variables = {
       DISCORD_PUBLIC_KEY   = var.discord_public_key
-      WORKER_FUNCTION_NAME = aws_lambda_function.bot_worker[0].function_name
+      WORKER_FUNCTION_NAME = aws_lambda_function.bot_worker.function_name
     }
   }
 }
 
 resource "aws_lambda_function" "bot_worker" {
-  count = local.bot_enabled
-
   function_name    = "${var.project}-bot-worker"
-  role             = aws_iam_role.bot_worker[0].arn
-  filename         = data.archive_file.bot[0].output_path
-  source_code_hash = data.archive_file.bot[0].output_base64sha256
+  role             = aws_iam_role.bot_worker.arn
+  filename         = data.archive_file.bot.output_path
+  source_code_hash = data.archive_file.bot.output_base64sha256
   handler          = "palworld_bot.worker.handle"
   runtime          = "python3.13"
   architectures    = ["arm64"]
@@ -153,8 +129,6 @@ resource "aws_lambda_function" "bot_worker" {
 // Discord signs every request with Ed25519 and the function verifies it, so the
 // URL itself is left unauthenticated.
 resource "aws_lambda_function_url" "bot_webhook" {
-  count = local.bot_enabled
-
-  function_name      = aws_lambda_function.bot_webhook[0].function_name
+  function_name      = aws_lambda_function.bot_webhook.function_name
   authorization_type = "NONE"
 }

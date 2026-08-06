@@ -32,7 +32,7 @@ output "query_port" {
 
 output "bot_webhook_url" {
   description = "Set as the Interactions Endpoint URL of the Discord application"
-  value       = one(aws_lambda_function_url.bot_webhook[*].function_url)
+  value       = aws_lambda_function_url.bot_webhook.function_url
 }
 
 output "server_secrets_parameter" {

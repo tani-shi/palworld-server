@@ -5,10 +5,9 @@ server_name        = "My Palworld Server"
 server_description = "Palworld 1.0"
 max_players        = 16
 
-# Public Key of the Discord application. Not a secret -- it only verifies that a
-# request was signed by Discord. Leaving it out skips the bot's resources, which
-# is how the game server gets applied before the Discord application exists.
-# discord_public_key = "..."
+# Public Key of the Discord application. Required. Not a secret: it only verifies
+# that a request was signed by Discord.
+discord_public_key = "..."
 
 # Days of snapshot history DLM keeps.
 # snapshot_retention_count = 7

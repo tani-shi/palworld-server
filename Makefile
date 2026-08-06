@@ -59,7 +59,7 @@ require-ssm:
 help: ## Show this help
 	@awk 'BEGIN {FS = ":.*##"} \
 	  /^##@/ {printf "\n%s\n", substr($$0, 5)} \
-	  /^[a-z][a-z0-9-]*:.*##/ {printf "  %-18s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
+	  /^[a-z][a-z0-9-]*:.*##/ {printf "  %-21s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 
 ##@ Infra
 init: ## Initialise Terraform
@@ -76,11 +76,11 @@ apply: ## Apply the Terraform
 	$(TF) apply
 
 ##@ Bot
-bot: ## Build the Lambda package and deploy it
+bot-deploy: ## Build the Lambda package and deploy it
 	bot/scripts/build.sh
 	$(TF) apply
 
-bot-commands: ## Register the slash commands with Discord (needs bot/.env)
+bot-deploy-commands: ## Register the slash commands with Discord (needs bot/.env)
 	cd bot && uv run --env-file .env scripts/deploy_commands.py
 
 ##@ Server (players use /palworld in Discord; these are for when it is unreachable)
@@ -135,10 +135,10 @@ password: ## Read the in-game admin password
 	@$(AWS) ssm get-parameter --name $(SECRET) --with-decryption \
 	  --query Parameter.Value --output text
 
-no-update: require-ssm ## Stop app_update from running on the next start
+autoupdate-off: require-ssm ## Stop app_update from running on the next start
 	@$(call ssm,"mkdir -p $(DROP_IN_DIR) && echo \"[Service]\" > $(DROP_IN) && echo \"ExecStartPre=\" >> $(DROP_IN) && systemctl daemon-reload && echo disabled")
 
-no-update-off: require-ssm ## Let app_update run on start again
+autoupdate-on: require-ssm ## Let app_update run on start again
 	@$(call ssm,"rm -f $(DROP_IN) && systemctl daemon-reload && echo enabled")
 
 ##@ Snapshots
@@ -148,7 +148,7 @@ snapshots: ## List the snapshots of the world volume
 	  --query 'reverse(sort_by(Snapshots, &StartTime))[].[SnapshotId,StartTime,State,Description]' \
 	  --output table
 
-snapshot: ## Take a snapshot now (DESC="before the update")
+snapshot-create: ## Take a snapshot now (DESC="before the update")
 	@$(AWS) ec2 create-snapshot --volume-id $(VOLUME) --description "$(DESC)" \
 	  --tag-specifications 'ResourceType=snapshot,Tags=[{Key=Name,Value=palworld-manual},{Key=Project,Value=palworld}]' \
 	  --query '[SnapshotId,State]' --output text
@@ -191,6 +191,6 @@ restore-clean: require-ssm ## Unmount the clone and delete it
 	$$A ec2 delete-volume --volume-id $$VOL; \
 	echo "deleted $$VOL"
 
-.PHONY: help require-ssm init fmt plan apply bot bot-commands status start stop \
-	allowlist allow revoke session logs password no-update no-update-off \
-	snapshots snapshot restore-attach restore-list restore-world restore-clean
+.PHONY: help require-ssm init fmt plan apply bot-deploy bot-deploy-commands status start stop \
+	allowlist allow revoke session logs password autoupdate-off autoupdate-on \
+	snapshots snapshot-create restore-attach restore-list restore-world restore-clean

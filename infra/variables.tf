@@ -44,9 +44,8 @@ variable "max_players" {
 }
 
 variable "discord_public_key" {
-  description = "Public key of the Discord application, used to verify request signatures; null skips the bot entirely"
+  description = "Public key of the Discord application, used to verify request signatures"
   type        = string
-  default     = null
 }
 
 variable "game_port" {
