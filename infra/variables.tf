@@ -76,3 +76,14 @@ variable "snapshot_retention_count" {
   type        = number
   default     = 7
 }
+
+variable "claude_model" {
+  description = "Model the bot answers with. Claude Platform on AWS takes the bare id; an anthropic. prefix is Bedrock, a different service"
+  type        = string
+  default     = "claude-sonnet-5"
+}
+
+variable "anthropic_workspace_id" {
+  description = "Workspace created during Claude Platform on AWS sign-up (wrkspc_...), bound to aws_region"
+  type        = string
+}

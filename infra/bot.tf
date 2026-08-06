@@ -85,6 +85,43 @@ resource "aws_iam_role_policy" "bot_worker" {
         ]
         Resource = "*"
       },
+      {
+        // Every Claude Platform on AWS route maps to one action in this
+        // namespace; POST /v1/messages is CreateInference and nothing else is
+        // needed to answer a question.
+        Sid      = "AnswerQuestions"
+        Effect   = "Allow"
+        Action   = ["aws-external-anthropic:CreateInference"]
+        Resource = "arn:aws:aws-external-anthropic:${var.aws_region}:${data.aws_caller_identity.current.account_id}:workspace/${var.anthropic_workspace_id}"
+      },
+      {
+        Sid      = "ReadTheSystemPrompt"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter"]
+        Resource = aws_ssm_parameter.ask_system_prompt.arn
+      },
+      {
+        Sid    = "AskTheServer"
+        Effect = "Allow"
+        Action = ["ssm:SendCommand"]
+        Resource = [
+          "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/${aws_instance.server.id}",
+          "arn:aws:ssm:${var.aws_region}::document/AWS-RunShellScript",
+        ]
+      },
+      {
+        // This call rejects a resource other than "*".
+        Sid      = "ReadTheAnswer"
+        Effect   = "Allow"
+        Action   = ["ssm:GetCommandInvocation"]
+        Resource = "*"
+      },
+      {
+        Sid      = "ReadCommandOutput"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:ListBucket"]
+        Resource = [aws_s3_bucket.command_output.arn, "${aws_s3_bucket.command_output.arn}/*"]
+      },
     ]
   })
 }
@@ -119,15 +156,21 @@ resource "aws_lambda_function" "bot_worker" {
   handler          = "palworld_bot.worker.handle"
   runtime          = "python3.13"
   architectures    = ["arm64"]
-  memory_size      = 256
-  timeout          = 30
+  memory_size      = 512
+  timeout          = 300
 
   environment {
     variables = {
-      INSTANCE_ID       = aws_instance.server.id
-      SECURITY_GROUP_ID = aws_security_group.server.id
-      GAME_PORT         = var.game_port
-      QUERY_PORT        = var.query_port
+      INSTANCE_ID                = aws_instance.server.id
+      SECURITY_GROUP_ID          = aws_security_group.server.id
+      GAME_PORT                  = var.game_port
+      QUERY_PORT                 = var.query_port
+      REST_API_PORT              = var.rest_api_port
+      COMMAND_OUTPUT_BUCKET      = aws_s3_bucket.command_output.id
+      SERVER_SECRETS_PARAMETER   = aws_ssm_parameter.server_secrets.name
+      SYSTEM_PROMPT_PARAMETER    = aws_ssm_parameter.ask_system_prompt.name
+      CLAUDE_MODEL               = var.claude_model
+      ANTHROPIC_AWS_WORKSPACE_ID = var.anthropic_workspace_id
     }
   }
 }

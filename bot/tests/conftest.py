@@ -44,6 +44,7 @@ def env(monkeypatch):
     monkeypatch.setenv("SERVER_SECRETS_PARAMETER", "/palworld/1.0/server_secrets")
     monkeypatch.setenv("AWS_REGION", "ap-northeast-1")
     monkeypatch.setenv("GAME_PORT", "8211")
+    monkeypatch.setenv("QUERY_PORT", "27015")
     monkeypatch.setenv("SECURITY_GROUP_ID", "sg-0123456789abcdef0")
     monkeypatch.setenv("CLAUDE_MODEL", "claude-sonnet-5")
     monkeypatch.setenv("ANTHROPIC_AWS_WORKSPACE_ID", "wrkspc_01test")
