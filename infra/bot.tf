@@ -1,5 +1,8 @@
 data "aws_caller_identity" "current" {}
 
+// bot/build comes from bot/scripts/build.sh, run before apply. Building it from
+// Terraform does not work: archive_file is evaluated during plan, so it would zip
+// a directory a null_resource has not created yet.
 data "archive_file" "bot" {
   type        = "zip"
   source_dir  = "${path.module}/../bot/build"
@@ -86,6 +89,9 @@ resource "aws_iam_role_policy" "bot_worker" {
   })
 }
 
+// Two functions from one zip, differing only in handler. Returning the deferred
+// ACK ends the invocation, so the function Discord calls cannot also send the
+// follow-up.
 resource "aws_lambda_function" "bot_webhook" {
   function_name    = "${var.project}-bot-webhook"
   role             = aws_iam_role.bot_webhook.arn

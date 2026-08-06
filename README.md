@@ -6,7 +6,6 @@ Palworld 1.0 の専用サーバーを AWS 上で運用するリポジトリ。
 | --- | --- |
 | `infra/` | Terraform。VPC / Security Group / EC2 / Elastic IP / スナップショット（DLM）/ IAM |
 | `bot/` | Discord bot（Lambda） |
-| `docs/` | 設計記録 |
 
 操作は `make help` に一覧がある。
 
