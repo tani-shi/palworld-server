@@ -151,9 +151,15 @@ api-settings: require-ssm ## Effective server settings
 api-game-data: require-ssm ## Snapshot of every actor in the world
 	@$(call restapi,"$(CURL) $(API)/game-data")
 
+# The text is base64'd before it reaches the SSM command string, which can
+# carry neither a comma (it would split the $(call) argument) nor a single
+# quote (it would close the quoting around --parameters). MSG's own single
+# quotes are escaped first: $(shell ...) runs through /bin/sh here, so an
+# apostrophe in the message would otherwise break the encoding itself and send
+# an empty announcement with no error.
 api-announce: require-ssm ## Broadcast a message in game (MSG="server going down")
 	@test -n "$(MSG)" || { echo 'usage: make api-announce MSG="text"'; exit 1; }
-	@$(call restapi,"echo $(shell printf %s '$(MSG)' | base64 | tr -d '\n') | base64 -d >/tmp/announce.txt && jq -Rs \"{message:.}\" </tmp/announce.txt >/tmp/announce.json && $(CURL) -X POST -H \"Content-Type: application/json\" -d @/tmp/announce.json $(API)/announce && rm -f /tmp/announce.txt /tmp/announce.json")
+	@$(call restapi,"echo $(shell printf %s '$(subst ','\'',$(MSG))' | base64 | tr -d '\n') | base64 -d >/tmp/announce.txt && jq -Rs \"{message:.}\" </tmp/announce.txt >/tmp/announce.json && $(CURL) -X POST -H \"Content-Type: application/json\" -d @/tmp/announce.json $(API)/announce; RC=$$?; rm -f /tmp/announce.txt /tmp/announce.json; exit $$RC")
 
 ##@ Access
 allowlist: ## List the addresses allowed to reach the server
