@@ -24,6 +24,13 @@ def test_a_short_answer_is_one_message(posted):
     assert '"short"' in posted[0]
 
 
+def test_the_posted_body_disables_mention_resolution(posted):
+    from palworld_bot import interactions
+
+    interactions.send_followup("app", "token", "short")
+    assert json.loads(posted[0])["allowed_mentions"] == {"parse": []}
+
+
 def test_a_long_answer_is_split(posted):
     from palworld_bot import interactions
 

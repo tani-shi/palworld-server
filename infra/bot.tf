@@ -95,14 +95,16 @@ resource "aws_iam_role_policy" "bot_worker" {
         Resource = "arn:aws:aws-external-anthropic:${var.aws_region}:${data.aws_caller_identity.current.account_id}:workspace/${var.anthropic_workspace_id}"
       },
       {
-        // Undocumented prerequisite for the above: the SDK mints a web identity
-        // token about the calling principal before signing the inference call,
-        // and without this the call 403s on sts:GetWebIdentityToken even though
-        // CreateInference alone is granted. Found from a production 403, not
-        // from the published IAM action list.
+        // Undocumented prerequisites for the above, absent from Anthropic's
+        // published IAM action list for the aws-external-anthropic namespace:
+        // the SDK mints a session-tagged web identity token about the calling
+        // principal before signing the inference call, mirroring how
+        // sts:AssumeRole pairs with sts:TagSession elsewhere. Without both
+        // actions the call 403s even though CreateInference alone is granted.
+        // Each was found only by hitting a 403 in production, one at a time.
         Sid      = "MintTheWebIdentityToken"
         Effect   = "Allow"
-        Action   = ["sts:GetWebIdentityToken"]
+        Action   = ["sts:GetWebIdentityToken", "sts:TagGetWebIdentityToken"]
         Resource = "arn:aws:sts::${data.aws_caller_identity.current.account_id}:self"
       },
       {

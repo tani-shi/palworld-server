@@ -46,7 +46,9 @@ def test_actors_filter_by_unit_type(loaded):
 
 def test_actors_never_expose_pii(loaded):
     snapshot, _ = loaded
-    for actor in snapshot.actors(limit=100):
+    found = snapshot.actors(limit=100)
+    assert found
+    for actor in found:
         assert "ip" not in actor
         assert "userid" not in actor
 
