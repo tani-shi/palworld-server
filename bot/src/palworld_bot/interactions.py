@@ -36,11 +36,38 @@ def response(payload):
     }
 
 
+# Discord rejects a content over this outright, so a long answer has to arrive
+# as several messages rather than one truncated one.
+CONTENT_LIMIT = 2000
+
+
 def send_followup(application_id, interaction_token, content):
-    request = urllib.request.Request(
-        f"{API_BASE}/webhooks/{application_id}/{interaction_token}",
-        data=json.dumps({"content": content}).encode(),
-        headers={"Content-Type": "application/json", "User-Agent": USER_AGENT},
-        method="POST",
-    )
-    urllib.request.urlopen(request, timeout=10).close()
+    for chunk in _chunks(content):
+        request = urllib.request.Request(
+            f"{API_BASE}/webhooks/{application_id}/{interaction_token}",
+            data=json.dumps({"content": chunk}).encode(),
+            headers={"Content-Type": "application/json", "User-Agent": USER_AGENT},
+            method="POST",
+        )
+        urllib.request.urlopen(request, timeout=10).close()
+
+
+def _chunks(content):
+    # An empty content is rejected too, so silence becomes a visible answer.
+    remaining = content.strip() or "(no answer)"
+
+    while remaining:
+        if len(remaining) <= CONTENT_LIMIT:
+            yield remaining
+            return
+
+        # Break where the writing already breaks; fall back to a hard cut only
+        # when a single paragraph or line is longer than the limit.
+        cut = remaining.rfind("\n\n", 0, CONTENT_LIMIT + 1)
+        if cut <= 0:
+            cut = remaining.rfind("\n", 0, CONTENT_LIMIT + 1)
+        if cut <= 0:
+            cut = CONTENT_LIMIT
+
+        yield remaining[:cut].rstrip()
+        remaining = remaining[cut:].lstrip()
