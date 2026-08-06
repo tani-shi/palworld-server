@@ -95,6 +95,17 @@ resource "aws_iam_role_policy" "bot_worker" {
         Resource = "arn:aws:aws-external-anthropic:${var.aws_region}:${data.aws_caller_identity.current.account_id}:workspace/${var.anthropic_workspace_id}"
       },
       {
+        // Undocumented prerequisite for the above: the SDK mints a web identity
+        // token about the calling principal before signing the inference call,
+        // and without this the call 403s on sts:GetWebIdentityToken even though
+        // CreateInference alone is granted. Found from a production 403, not
+        // from the published IAM action list.
+        Sid      = "MintTheWebIdentityToken"
+        Effect   = "Allow"
+        Action   = ["sts:GetWebIdentityToken"]
+        Resource = "arn:aws:sts::${data.aws_caller_identity.current.account_id}:self"
+      },
+      {
         Sid      = "ReadTheSystemPrompt"
         Effect   = "Allow"
         Action   = ["ssm:GetParameter"]
@@ -173,6 +184,16 @@ resource "aws_lambda_function" "bot_worker" {
       ANTHROPIC_AWS_WORKSPACE_ID = var.anthropic_workspace_id
     }
   }
+}
+
+// A retry can never be correct here: the worker already ran the model, posted
+// chunks and possibly broadcast with announce, so a retried invocation repeats
+// all of that rather than recovering anything. Lambda's async default of two
+// retries would otherwise fire on ordinary followup flakiness (a 429, a
+// timeout) partway through a run.
+resource "aws_lambda_function_event_invoke_config" "bot_worker" {
+  function_name          = aws_lambda_function.bot_worker.function_name
+  maximum_retry_attempts = 0
 }
 
 // Discord signs every request with Ed25519 and the function verifies it, so the

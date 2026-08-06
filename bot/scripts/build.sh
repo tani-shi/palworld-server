@@ -14,9 +14,8 @@ uv pip install --quiet \
   --target "$BUILD_DIR" \
   pynacl "anthropic[aws]"
 
-# anthropic[aws] pulls boto3 in for SigV4, and boto3 with botocore is over
-# 100 MiB unpacked. The Lambda runtime already provides them, and the package
-# has a 250 MiB unzipped ceiling.
+# anthropic[aws] pulls boto3 in for SigV4. The Lambda runtime already
+# provides both, and the package has a 250 MiB unzipped ceiling.
 rm -rf "$BUILD_DIR"/boto3 "$BUILD_DIR"/botocore \
   "$BUILD_DIR"/boto3-*.dist-info "$BUILD_DIR"/botocore-*.dist-info
 

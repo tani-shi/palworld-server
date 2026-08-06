@@ -43,7 +43,9 @@ def test_server_status_merges_info_and_metrics(wired):
 
 def test_online_players_drop_pii(wired):
     tools, _ = wired
-    for player in tools.run("online_players", {})["players"]:
+    players = tools.run("online_players", {})["players"]
+    assert players
+    for player in players:
         assert "iP" not in player
         assert "userId" not in player
         assert "accountName" not in player

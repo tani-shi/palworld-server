@@ -11,19 +11,27 @@ logger.setLevel(logging.INFO)
 
 
 def handle(interaction, context):
-    interactions.send_followup(
-        interaction["application_id"], interaction["token"], _run(interaction)
-    )
+    _run(interaction)
 
 
 def _run(interaction):
     try:
-        return commands.run(interaction)
+        result = commands.run(interaction)
     except commands.Rejected as rejected:
-        return str(rejected)
+        result = str(rejected)
     except ClientError as error:
         logger.exception("AWS call failed")
-        return f"AWS refused the call: {error.response['Error']['Message']}"
+        result = f"AWS refused the call: {error.response['Error']['Message']}"
     except Exception:
         logger.exception("Command failed")
-        return "The command failed. The details are in CloudWatch Logs."
+        result = "The command failed. The details are in CloudWatch Logs."
+
+    try:
+        interactions.send_followup(
+            interaction["application_id"], interaction["token"], result
+        )
+    except Exception:
+        # Nowhere left to report to: the followup itself is the last chance to
+        # reach the user. Async retries are disabled (see bot.tf) precisely so
+        # a failure here does not re-run the whole command from scratch.
+        logger.exception("Failed to post the followup")

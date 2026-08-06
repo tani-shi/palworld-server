@@ -1,4 +1,3 @@
-import json
 from unittest.mock import MagicMock
 
 import pytest
@@ -30,3 +29,17 @@ def test_get_raises_when_the_command_fails(env, monkeypatch):
 
     with pytest.raises(palapi.Unreachable):
         palapi.get("metrics")
+
+
+def test_announce_does_not_raise_when_the_command_produces_output(env, monkeypatch):
+    ssm, s3 = MagicMock(), MagicMock()
+    ssm.send_command.return_value = {"Command": {"CommandId": "cmd-1"}}
+    s3.list_objects_v2.return_value = {
+        "Contents": [{"Key": "restapi/cmd-1/i-0/awsrunShellScript/0.awsrunShellScript/stdout"}]
+    }
+    s3.get_object.return_value = {"Body": MagicMock(read=lambda: b"announced\n")}
+    monkeypatch.setattr("boto3.client", lambda name: {"ssm": ssm, "s3": s3}[name])
+
+    from palworld_bot import palapi
+
+    palapi.announce("restarting soon")

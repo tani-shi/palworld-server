@@ -17,6 +17,10 @@ API_BASE = "https://discord.com/api/v10"
 # one urllib sends by default.
 USER_AGENT = "DiscordBot (https://github.com/tani-shi/palworld-server, 0.1.0)"
 
+# Discord rejects a content over this outright, so a long answer has to arrive
+# as several messages rather than one truncated one.
+CONTENT_LIMIT = 2000
+
 
 def verify(public_key, signature, timestamp, body):
     try:
@@ -36,16 +40,16 @@ def response(payload):
     }
 
 
-# Discord rejects a content over this outright, so a long answer has to arrive
-# as several messages rather than one truncated one.
-CONTENT_LIMIT = 2000
-
-
 def send_followup(application_id, interaction_token, content):
     for chunk in _chunks(content):
         request = urllib.request.Request(
             f"{API_BASE}/webhooks/{application_id}/{interaction_token}",
-            data=json.dumps({"content": chunk}).encode(),
+            # The model's reply carries untrusted text (wiki content, player
+            # nicknames), and Discord resolves @everyone/@here/role mentions in
+            # followups by default; parse: [] turns that off.
+            data=json.dumps(
+                {"content": chunk, "allowed_mentions": {"parse": []}}
+            ).encode(),
             headers={"Content-Type": "application/json", "User-Agent": USER_AGENT},
             method="POST",
         )

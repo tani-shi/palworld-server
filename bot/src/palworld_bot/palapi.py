@@ -35,10 +35,16 @@ def get(endpoint):
 def announce(message):
     payload = json.dumps({"message": message})
     quoted = payload.replace("'", "'\\''")
+    # A successful POST prints nothing, so SSM would write no stdout object and
+    # _stdout would read that as Unreachable, telling the model the broadcast
+    # failed when it already reached the game. The echo gives it something to
+    # read; the cleanup runs unconditionally so a failed curl still gets its
+    # real exit code back instead of being masked by rm's success.
     _run(
         f"printf %s '{quoted}' > /tmp/announce.json && "
         f'curl -fsS -X POST -u "admin:{PASSWORD}" -H "Content-Type: application/json" '
-        f"-d @/tmp/announce.json {API}/announce && rm -f /tmp/announce.json"
+        f"-d @/tmp/announce.json {API}/announce && echo announced; "
+        "RC=$?; rm -f /tmp/announce.json; exit $RC"
     )
 
 

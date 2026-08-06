@@ -82,5 +82,7 @@ def test_a_realistic_long_answer_round_trips_within_the_limit(posted):
     # line breaks are stripped, and a hard cut can land on a space); collapse
     # whitespace on both sides before comparing so the check isn't fooled by
     # those join seams while still catching dropped or reordered text.
-    collapse = lambda text: re.sub(r"\s+", "", text)
+    def collapse(text):
+        return re.sub(r"\s+", "", text)
+
     assert collapse("".join(chunks)) == collapse(answer)

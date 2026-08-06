@@ -30,18 +30,19 @@ def load():
 
 def summary():
     data = load()
-    characters = [a for a in data["ActorData"] if a.get("Type") == "Character"]
-    boxes = [a for a in data["ActorData"] if a.get("Type") == "PalBox"]
+    actors = data.get("ActorData", [])
+    characters = [a for a in actors if a.get("Type") == "Character"]
+    boxes = [a for a in actors if a.get("Type") == "PalBox"]
 
     return {
-        "in_game_time": data["InGameTime"],
-        "in_game_days": data["InGameDays"],
-        "server_fps": round(data["FPS"], 1),
-        "total": len(data["ActorData"]),
+        "in_game_time": data.get("InGameTime"),
+        "in_game_days": data.get("InGameDays"),
+        "server_fps": round(data["FPS"], 1) if "FPS" in data else None,
+        "total": len(actors),
         "pal_boxes": len(boxes),
-        "by_unit_type": _count(a["UnitType"] for a in characters),
-        "by_species": _count(a["NickName"] for a in characters if a["UnitType"] != "Player"),
-        "by_guild": _count(a["GuildName"] for a in data["ActorData"] if a.get("GuildName")),
+        "by_unit_type": _count(a.get("UnitType") for a in characters),
+        "by_species": _count(a.get("NickName") for a in characters if a.get("UnitType") != "Player"),
+        "by_guild": _count(a.get("GuildName") for a in actors if a.get("GuildName")),
     }
 
 

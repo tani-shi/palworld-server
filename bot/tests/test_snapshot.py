@@ -38,7 +38,9 @@ def test_summary_counts_every_unit_type(loaded):
 
 def test_actors_filter_by_unit_type(loaded):
     snapshot, _ = loaded
-    for actor in snapshot.actors(unit_type="WildPal"):
+    found = snapshot.actors(unit_type="WildPal")
+    assert found
+    for actor in found:
         assert actor["unit_type"] == "WildPal"
 
 
@@ -52,7 +54,23 @@ def test_actors_never_expose_pii(loaded):
 def test_actors_near_a_player_are_within_the_radius(loaded):
     snapshot, _ = loaded
     near = snapshot.actors(near_player="PlayerOne", radius_m=50, limit=100)
+    assert near
     assert all(actor["distance_m"] <= 50 for actor in near)
+
+
+def test_summary_of_an_empty_world_does_not_raise(env, monkeypatch):
+    from palworld_bot import snapshot
+
+    snapshot.reset()
+    monkeypatch.setattr(
+        "palworld_bot.palapi.get",
+        lambda endpoint: {"Time": "2026-08-06 09:09:27", "ActorData": []},
+    )
+
+    summary = snapshot.summary()
+    assert summary["total"] == 0
+    assert summary["by_unit_type"] == {}
+    assert summary["server_fps"] is None
 
 
 def test_near_an_unknown_player_is_empty(loaded):
