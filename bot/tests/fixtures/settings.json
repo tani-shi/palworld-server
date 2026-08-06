@@ -120,7 +120,5 @@
   "bAllowEnhanceStat_Weight": true,
   "bAllowEnhanceStat_WorkSpeed": true,
   "bEnableBuildingPlayerUIdDisplay": false,
-  "BuildingNameDisplayCacheTTLSeconds": 60,
-  "AdminPassword": "",
-  "ServerPassword": ""
+  "BuildingNameDisplayCacheTTLSeconds": 60
 }
