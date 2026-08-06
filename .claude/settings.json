@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(make api-info)",
+      "Bash(make api-metrics)",
+      "Bash(make api-players)",
+      "Bash(make api-settings)",
+      "Bash(make api-game-data)",
+      "Bash(make api-game-data:*)",
+      "Bash(make status)",
+      "Bash(make help)",
+      "Bash(make fmt)",
+      "Bash(make plan)",
+      "Bash(make prompt)"
+    ]
+  }
+}
