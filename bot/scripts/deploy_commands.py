@@ -44,6 +44,19 @@ COMMAND = {
             "options": [IP_OPTION],
         },
         {"type": SUBCOMMAND, "name": "allowlist", "description": "List allowed addresses"},
+        {
+            "type": SUBCOMMAND,
+            "name": "ask",
+            "description": "Ask about the server in plain language",
+            "options": [
+                {
+                    "type": STRING,
+                    "name": "prompt",
+                    "description": "What do you want to know?",
+                    "required": True,
+                }
+            ],
+        },
     ],
 }
 

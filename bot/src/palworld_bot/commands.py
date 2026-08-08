@@ -2,7 +2,7 @@
 
 import ipaddress
 
-from . import access, server
+from . import access, agent, server
 
 
 class Rejected(Exception):
@@ -26,6 +26,8 @@ def run(interaction):
         return access.revoke(_host_cidr(options["ip"]))
     if name == "allowlist":
         return _render(access.allowed())
+    if name == "ask":
+        return agent.answer(options["prompt"])
 
     raise Rejected(f"Unknown subcommand: {name}")
 

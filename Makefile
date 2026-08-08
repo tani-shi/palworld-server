@@ -14,8 +14,14 @@ SG         = $(shell $(TF) output -raw security_group_id)
 SECRET     = $(shell $(TF) output -raw server_secrets_parameter)
 GAME_PORT  = $(shell $(TF) output -raw game_port)
 QUERY_PORT = $(shell $(TF) output -raw query_port)
+REST_PORT   = $(shell $(TF) output -raw rest_api_port)
+BUCKET      = $(shell $(TF) output -raw command_output_bucket)
+REGION      = $(shell $(TF) output -raw aws_region)
+PROMPT_PARAM = $(shell $(TF) output -raw system_prompt_parameter)
+PROMPT_FILE  = bot/prompts/ask.md
 
-SAVES       = /home/palworld/PalServer/Pal/Saved
+PAL_DIR     = /home/palworld/PalServer
+SAVES       = $(PAL_DIR)/Pal/Saved
 CLONE       = /mnt/restore
 DROP_IN_DIR = /etc/systemd/system/palworld.service.d
 DROP_IN     = $(DROP_IN_DIR)/no-update.conf
@@ -40,6 +46,37 @@ else \
     --query '[StandardOutputContent,StandardErrorContent]' --output text >&2; \
   exit 1; \
 fi
+endef
+
+# The expansion stays inside the single-quoted --parameters below, so the local
+# shell leaves it alone and the instance is what evaluates it.
+PASSWORD_COMMAND = $$(aws ssm get-parameter --region $(REGION) --name $(SECRET) --with-decryption --query Parameter.Value --output text | jq -r .admin_password)
+CURL = curl -fsS -u \"admin:$(PASSWORD_COMMAND)\"
+API  = http://127.0.0.1:$(REST_PORT)/v1/api
+
+# Same shape as ssm above, but the output comes back through S3. The inline
+# StandardOutputContent stops at 24,000 characters and game-data passes that
+# with one player online, so reading it inline would silently truncate. All six
+# endpoints share this path rather than only the large one: two paths would
+# mean remembering which endpoint is safe to read inline. The object key is
+# looked up rather than assembled, because the layout Run Command writes under
+# the prefix is not part of its API contract. "None" is checked alongside the
+# empty string because --output text prints that word, not nothing, when the
+# query matches no object.
+define restapi
+A="$(AWS)"; I="$(INSTANCE)"; B="$(BUCKET)"; \
+CMD=$$($$A ssm send-command --instance-ids $$I --document-name AWS-RunShellScript \
+  --output-s3-bucket-name $$B --output-s3-key-prefix restapi \
+  --parameters 'commands=[$(1)]' --query Command.CommandId --output text); \
+if ! $$A ssm wait command-executed --command-id $$CMD --instance-id $$I; then \
+  $$A ssm get-command-invocation --command-id $$CMD --instance-id $$I \
+    --query StandardErrorContent --output text >&2; \
+  exit 1; \
+fi; \
+KEY=$$($$A s3api list-objects-v2 --bucket $$B --prefix restapi/$$CMD \
+  --query "Contents[?ends_with(Key, 'stdout')].Key" --output text); \
+case $$KEY in '' | None) echo "the command wrote no stdout" >&2; exit 1 ;; esac; \
+$$A s3 cp s3://$$B/$$KEY -
 endef
 
 .DEFAULT_GOAL := help
@@ -83,6 +120,13 @@ bot-deploy: ## Build the Lambda package and deploy it
 bot-deploy-commands: ## Register the slash commands with Discord (needs bot/.env)
 	cd bot && uv run --env-file .env scripts/deploy_commands.py
 
+prompt: ## Show the system prompt the bot is running with
+	@$(AWS) ssm get-parameter --name $(PROMPT_PARAM) --query Parameter.Value --output text
+
+prompt-deploy: ## Push bot/prompts/ask.md as the system prompt (no redeploy needed)
+	@$(AWS) ssm put-parameter --name $(PROMPT_PARAM) --type String --tier Advanced \
+	  --overwrite --value "file://$(PROMPT_FILE)" --query Version --output text
+
 ##@ Server (players use /palworld in Discord; these are for when it is unreachable)
 status: ## Instance state, address and health checks
 	@A="$(AWS)"; I="$(INSTANCE)"; \
@@ -99,6 +143,32 @@ start: ## Start the instance
 stop: ## Stop the instance
 	@$(AWS) ec2 stop-instances --instance-ids $(INSTANCE) \
 	  --query 'StoppingInstances[0].CurrentState.Name' --output text
+
+##@ REST API
+api-info: require-ssm ## Server version, name and world id
+	@$(call restapi,"$(CURL) $(API)/info")
+
+api-metrics: require-ssm ## FPS, player count, uptime, base camps, in-game day
+	@$(call restapi,"$(CURL) $(API)/metrics")
+
+api-players: require-ssm ## Players connected right now
+	@$(call restapi,"$(CURL) $(API)/players")
+
+api-settings: require-ssm ## Effective server settings
+	@$(call restapi,"$(CURL) $(API)/settings")
+
+api-game-data: require-ssm ## Snapshot of every actor in the world
+	@$(call restapi,"$(CURL) $(API)/game-data")
+
+# The text is base64'd before it reaches the SSM command string, which can
+# carry neither a comma (it would split the $(call) argument) nor a single
+# quote (it would close the quoting around --parameters). MSG's own single
+# quotes are escaped first: $(shell ...) runs through /bin/sh here, so an
+# apostrophe in the message would otherwise break the encoding itself and send
+# an empty announcement with no error.
+api-announce: require-ssm ## Broadcast a message in game (MSG="server going down")
+	@test -n "$(MSG)" || { echo 'usage: make api-announce MSG="text"'; exit 1; }
+	@$(call restapi,"echo $(shell printf %s '$(subst ','\'',$(MSG))' | base64 | tr -d '\n') | base64 -d >/tmp/announce.txt && jq -Rs \"{message:.}\" </tmp/announce.txt >/tmp/announce.json && $(CURL) -X POST -H \"Content-Type: application/json\" -d @/tmp/announce.json $(API)/announce && echo announced; RC=$$?; rm -f /tmp/announce.txt /tmp/announce.json; exit $$RC")
 
 ##@ Access
 allowlist: ## List the addresses allowed to reach the server
@@ -191,6 +261,7 @@ restore-clean: require-ssm ## Unmount the clone and delete it
 	$$A ec2 delete-volume --volume-id $$VOL; \
 	echo "deleted $$VOL"
 
-.PHONY: help require-ssm init fmt plan apply bot-deploy bot-deploy-commands status start stop \
+.PHONY: help require-ssm init fmt plan apply bot-deploy bot-deploy-commands prompt prompt-deploy status start stop \
 	allowlist allow revoke session logs password autoupdate-off autoupdate-on \
-	snapshots snapshot-create restore-attach restore-list restore-world restore-clean
+	snapshots snapshot-create restore-attach restore-list restore-world restore-clean \
+	api-info api-metrics api-players api-settings api-game-data api-announce

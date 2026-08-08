@@ -85,6 +85,56 @@ resource "aws_iam_role_policy" "bot_worker" {
         ]
         Resource = "*"
       },
+      {
+        // Every Claude Platform on AWS route maps to one action in this
+        // namespace; POST /v1/messages is CreateInference and nothing else is
+        // needed to answer a question.
+        Sid      = "AnswerQuestions"
+        Effect   = "Allow"
+        Action   = ["aws-external-anthropic:CreateInference"]
+        Resource = "arn:aws:aws-external-anthropic:${var.aws_region}:${data.aws_caller_identity.current.account_id}:workspace/${var.anthropic_workspace_id}"
+      },
+      {
+        // Undocumented prerequisites for the above, absent from Anthropic's
+        // published IAM action list for the aws-external-anthropic namespace:
+        // the SDK mints a session-tagged web identity token about the calling
+        // principal before signing the inference call, mirroring how
+        // sts:AssumeRole pairs with sts:TagSession elsewhere. Without both
+        // actions the call 403s even though CreateInference alone is granted.
+        // Each was found only by hitting a 403 in production, one at a time.
+        Sid      = "MintTheWebIdentityToken"
+        Effect   = "Allow"
+        Action   = ["sts:GetWebIdentityToken", "sts:TagGetWebIdentityToken"]
+        Resource = "arn:aws:sts::${data.aws_caller_identity.current.account_id}:self"
+      },
+      {
+        Sid      = "ReadTheSystemPrompt"
+        Effect   = "Allow"
+        Action   = ["ssm:GetParameter"]
+        Resource = aws_ssm_parameter.ask_system_prompt.arn
+      },
+      {
+        Sid    = "AskTheServer"
+        Effect = "Allow"
+        Action = ["ssm:SendCommand"]
+        Resource = [
+          "arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/${aws_instance.server.id}",
+          "arn:aws:ssm:${var.aws_region}::document/AWS-RunShellScript",
+        ]
+      },
+      {
+        // This call rejects a resource other than "*".
+        Sid      = "ReadTheAnswer"
+        Effect   = "Allow"
+        Action   = ["ssm:GetCommandInvocation"]
+        Resource = "*"
+      },
+      {
+        Sid      = "ReadCommandOutput"
+        Effect   = "Allow"
+        Action   = ["s3:GetObject", "s3:ListBucket"]
+        Resource = [aws_s3_bucket.command_output.arn, "${aws_s3_bucket.command_output.arn}/*"]
+      },
     ]
   })
 }
@@ -119,17 +169,33 @@ resource "aws_lambda_function" "bot_worker" {
   handler          = "palworld_bot.worker.handle"
   runtime          = "python3.13"
   architectures    = ["arm64"]
-  memory_size      = 256
-  timeout          = 30
+  memory_size      = 512
+  timeout          = 300
 
   environment {
     variables = {
-      INSTANCE_ID       = aws_instance.server.id
-      SECURITY_GROUP_ID = aws_security_group.server.id
-      GAME_PORT         = var.game_port
-      QUERY_PORT        = var.query_port
+      INSTANCE_ID                = aws_instance.server.id
+      SECURITY_GROUP_ID          = aws_security_group.server.id
+      GAME_PORT                  = var.game_port
+      QUERY_PORT                 = var.query_port
+      REST_API_PORT              = var.rest_api_port
+      COMMAND_OUTPUT_BUCKET      = aws_s3_bucket.command_output.id
+      SERVER_SECRETS_PARAMETER   = aws_ssm_parameter.server_secrets.name
+      SYSTEM_PROMPT_PARAMETER    = aws_ssm_parameter.ask_system_prompt.name
+      CLAUDE_MODEL               = var.claude_model
+      ANTHROPIC_AWS_WORKSPACE_ID = var.anthropic_workspace_id
     }
   }
+}
+
+// A retry can never be correct here: the worker already ran the model, posted
+// chunks and possibly broadcast with announce, so a retried invocation repeats
+// all of that rather than recovering anything. Lambda's async default of two
+// retries would otherwise fire on ordinary followup flakiness (a 429, a
+// timeout) partway through a run.
+resource "aws_lambda_function_event_invoke_config" "bot_worker" {
+  function_name          = aws_lambda_function.bot_worker.function_name
+  maximum_retry_attempts = 0
 }
 
 // Discord signs every request with Ed25519 and the function verifies it, so the
@@ -137,4 +203,19 @@ resource "aws_lambda_function" "bot_worker" {
 resource "aws_lambda_function_url" "bot_webhook" {
   function_name      = aws_lambda_function.bot_webhook.function_name
   authorization_type = "NONE"
+}
+
+// The prompt lives in the repository and is pushed with `make prompt-deploy`,
+// so Terraform seeds the value once and then leaves it alone. Managing the
+// value here would mean an apply for every wording change, and would revert
+// any prompt pushed since the last apply.
+resource "aws_ssm_parameter" "ask_system_prompt" {
+  name  = "/${var.project}/${var.server_version}/ask_system_prompt"
+  type  = "String"
+  tier  = "Advanced"
+  value = file("${path.module}/../bot/prompts/ask.md")
+
+  lifecycle {
+    ignore_changes = [value]
+  }
 }

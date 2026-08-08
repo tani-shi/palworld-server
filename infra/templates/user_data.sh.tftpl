@@ -128,7 +128,11 @@ WorkingDirectory=$PAL_DIR
 # updates first. Leading "-" because a Steam outage must not keep the server
 # down: the old build still serves the clients that have not patched yet.
 ExecStartPre=-$STEAMCMD +force_install_dir $PAL_DIR +login anonymous +app_update ${steam_app_id} validate +quit
-ExecStart=$PAL_DIR/PalServer.sh -port=${game_port} -players=${max_players} -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS
+# -EnableGameDataAPI exposes /v1/api/game-data, which the bot reads to answer
+# questions about the world. It is a launch switch, not an ini key: the name is
+# absent from DefaultPalWorldSettings.ini. The docs spell it
+# "-enable-gamedata-api", but that string is absent from the v1.0.2 binary.
+ExecStart=$PAL_DIR/PalServer.sh -port=${game_port} -players=${max_players} -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS -EnableGameDataAPI
 # SIGINT lets the engine flush the world to disk; SIGTERM corrupts in-flight saves.
 KillSignal=SIGINT
 TimeoutStopSec=120

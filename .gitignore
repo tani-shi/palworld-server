@@ -57,3 +57,6 @@ crash.log
 # Lambda build artefacts
 bot/build/
 bot/build.zip
+
+# Working design notes
+docs/superpowers/

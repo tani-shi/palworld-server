@@ -20,10 +20,9 @@ output "server_address" {
   value = "${aws_eip.server.public_ip}:${var.game_port}"
 }
 
-// The Makefile opens both ports for an address. server_address carries only the
-// game port.
 output "game_port" {
-  value = var.game_port
+  description = "The Makefile opens both ports for an address; server_address carries only this one"
+  value       = var.game_port
 }
 
 output "query_port" {
@@ -38,4 +37,18 @@ output "bot_webhook_url" {
 output "server_secrets_parameter" {
   description = "SSM parameter holding the admin password; read it with aws ssm get-parameter --with-decryption"
   value       = aws_ssm_parameter.server_secrets.name
+}
+
+output "command_output_bucket" {
+  description = "Run Command writes stdout here; callers read it back because SSM truncates the inline output at 24,000 characters"
+  value       = aws_s3_bucket.command_output.id
+}
+
+output "rest_api_port" {
+  value = var.rest_api_port
+}
+
+output "system_prompt_parameter" {
+  description = "SSM parameter holding the /palworld ask system prompt; push changes with make prompt-deploy"
+  value       = aws_ssm_parameter.ask_system_prompt.name
 }

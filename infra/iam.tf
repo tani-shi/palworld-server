@@ -41,6 +41,14 @@ data "aws_iam_policy_document" "server" {
     actions   = ["ec2:StopInstances"]
     resources = ["arn:aws:ec2:${var.aws_region}:${data.aws_caller_identity.current.account_id}:instance/${aws_instance.server.id}"]
   }
+
+  // Run Command uploads the command output with the instance's own
+  // credentials, not the caller's.
+  statement {
+    sid       = "WriteCommandOutput"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.command_output.arn}/*"]
+  }
 }
 
 resource "aws_iam_role_policy" "server" {

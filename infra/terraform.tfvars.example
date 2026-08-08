@@ -11,3 +11,6 @@ discord_public_key = "..."
 
 # Days of snapshot history DLM keeps.
 # snapshot_retention_count = 7
+
+# Workspace created during Claude Platform on AWS sign-up.
+anthropic_workspace_id = "wrkspc_01AbCdEf23GhIj"
