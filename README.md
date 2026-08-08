@@ -86,7 +86,7 @@ Discord や Lambda が落ちているときは `make start` / `make stop` / `mak
 | `make api-game-data` | ワールド内の全アクター |
 | `make api-announce MSG="..."` | ゲーム内に告知 |
 
-`api-game-data` には `-EnableGameDataAPI` 起動スイッチが要る（公式ドキュメントの `-enable-gamedata-api` はこのビルドでは通らない）。`make gamedata-on` で有効にし、`make gamedata-off` で戻す。**どちらもゲームサーバーを再起動する。**
+`api-game-data` には `-EnableGameDataAPI` 起動スイッチが要る（公式ドキュメントの `-enable-gamedata-api` はこのビルドでは通らない）。`/palworld ask` がワールドの質問ごとにこのエンドポイントを読むため、`user_data` のユニットが常にこのスイッチを渡す。切り替える手段は用意していない。
 
 `/palworld ask` はこの 6 本と web 検索・web 取得を Claude に道具として渡し、必要なものを選ばせて答える。`game-data` は 1 回の問い合わせにつき 1 度だけ取得してメモリ上で集計するので、何を訊いても実機への負荷は変わらない。会話は続かず、毎回独立した 1 問 1 答。長い回答は Discord の 1 メッセージ上限（2000 文字）で区切られ、複数のメッセージに分かれて届く。
 

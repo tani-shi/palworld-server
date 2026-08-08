@@ -7,7 +7,7 @@ import os
 import anthropic
 import boto3
 
-from . import snapshot, tools
+from . import tools, world
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +29,7 @@ MAX_TURNS = 8
 
 
 def answer(prompt):
-    snapshot.reset()
+    world.reset()
     client = anthropic.AnthropicAWS(aws_region=REGION, workspace_id=WORKSPACE_ID)
     system = _system()
     messages = [{"role": "user", "content": prompt}]

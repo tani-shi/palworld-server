@@ -25,10 +25,10 @@ def _reimport_palworld_bot():
 
 @pytest.fixture(autouse=True)
 def _stub_boto3_client(monkeypatch):
-    # palapi.py, server.py and access.py all build their clients at module
-    # scope (see _reimport_palworld_bot above for why), so importing any of
-    # them resolves real AWS credentials unless boto3.client is stubbed
-    # before the import happens. Making the clients lazy would dodge this in
+    # Every module here that talks to AWS builds its client at module scope
+    # (see _reimport_palworld_bot above for why), so importing any of them
+    # resolves real AWS credentials unless boto3.client is stubbed before the
+    # import happens. Naming them would drift the next time one is added. Making the clients lazy would dodge this in
     # one module but leaves the same trap for the next one; stubbing once
     # here covers all of them. A test that needs its own client behaviour
     # (test_palapi.py) overrides this via its own monkeypatch.setattr, which

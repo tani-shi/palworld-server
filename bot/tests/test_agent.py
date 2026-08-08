@@ -10,9 +10,9 @@ def block(**fields):
 
 @pytest.fixture
 def claude(env, monkeypatch):
-    from palworld_bot import snapshot
+    from palworld_bot import world
 
-    snapshot.reset()
+    world.reset()
     client = MagicMock()
     monkeypatch.setattr("anthropic.AnthropicAWS", lambda **kwargs: client)
     monkeypatch.setattr("palworld_bot.agent._system", lambda: "system prompt")

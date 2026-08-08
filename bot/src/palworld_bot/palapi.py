@@ -17,8 +17,8 @@ REGION = os.environ["AWS_REGION"]
 PREFIX = "restapi"
 API = f"http://127.0.0.1:{REST_API_PORT}/v1/api"
 
-# Fetched and used on the instance so the admin password never reaches Lambda.
-PASSWORD = (
+# Substituted on the instance, so the password itself never reaches Lambda.
+PASSWORD_COMMAND = (
     f"$(aws ssm get-parameter --region {REGION} --name {SECRETS_PARAMETER}"
     " --with-decryption --query Parameter.Value --output text | jq -r .admin_password)"
 )
@@ -29,7 +29,7 @@ class Unreachable(Exception):
 
 
 def get(endpoint):
-    return json.loads(_run(f'curl -fsS -u "admin:{PASSWORD}" {API}/{endpoint}'))
+    return json.loads(_run(f'curl -fsS -u "admin:{PASSWORD_COMMAND}" {API}/{endpoint}'))
 
 
 def announce(message):
@@ -42,7 +42,7 @@ def announce(message):
     # real exit code back instead of being masked by rm's success.
     _run(
         f"printf %s '{quoted}' > /tmp/announce.json && "
-        f'curl -fsS -X POST -u "admin:{PASSWORD}" -H "Content-Type: application/json" '
+        f'curl -fsS -X POST -u "admin:{PASSWORD_COMMAND}" -H "Content-Type: application/json" '
         f"-d @/tmp/announce.json {API}/announce && echo announced; "
         "RC=$?; rm -f /tmp/announce.json; exit $RC"
     )

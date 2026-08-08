@@ -6,9 +6,9 @@ from conftest import fixture
 
 @pytest.fixture
 def wired(env, monkeypatch):
-    from palworld_bot import snapshot, tools
+    from palworld_bot import tools, world
 
-    snapshot.reset()
+    world.reset()
     monkeypatch.setattr(
         "palworld_bot.palapi.get", lambda endpoint: json.loads(fixture(endpoint))
     )

@@ -1,6 +1,6 @@
 """The surface the model is allowed to touch."""
 
-from . import palapi, snapshot
+from . import palapi, world
 
 UNIT_TYPES = ["Player", "OtomoPal", "BaseCampPal", "WildPal", "NPC"]
 
@@ -109,9 +109,9 @@ def run(name, arguments):
     if name == "server_settings":
         return palapi.get("settings")
     if name == "world_summary":
-        return snapshot.summary()
+        return world.summary()
     if name == "world_actors":
-        return {"actors": snapshot.actors(**arguments)}
+        return {"actors": world.actors(**arguments)}
     if name == "announce":
         palapi.announce(arguments["message"])
         return {"sent": arguments["message"]}

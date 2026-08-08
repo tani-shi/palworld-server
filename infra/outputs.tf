@@ -20,10 +20,9 @@ output "server_address" {
   value = "${aws_eip.server.public_ip}:${var.game_port}"
 }
 
-// The Makefile opens both ports for an address. server_address carries only the
-// game port.
 output "game_port" {
-  value = var.game_port
+  description = "The Makefile opens both ports for an address; server_address carries only this one"
+  value       = var.game_port
 }
 
 output "query_port" {
@@ -47,11 +46,6 @@ output "command_output_bucket" {
 
 output "rest_api_port" {
   value = var.rest_api_port
-}
-
-// The game-data drop-in restates the whole ExecStart line, which carries this.
-output "max_players" {
-  value = var.max_players
 }
 
 output "system_prompt_parameter" {

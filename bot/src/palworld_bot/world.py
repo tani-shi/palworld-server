@@ -1,4 +1,4 @@
-"""The world snapshot: fetched once, then queried in memory."""
+"""The world as the server last saw it: fetched once, then queried in memory."""
 
 import collections
 import math

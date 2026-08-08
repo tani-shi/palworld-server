@@ -15,7 +15,6 @@ SECRET     = $(shell $(TF) output -raw server_secrets_parameter)
 GAME_PORT  = $(shell $(TF) output -raw game_port)
 QUERY_PORT = $(shell $(TF) output -raw query_port)
 REST_PORT   = $(shell $(TF) output -raw rest_api_port)
-MAX_PLAYERS = $(shell $(TF) output -raw max_players)
 BUCKET      = $(shell $(TF) output -raw command_output_bucket)
 REGION      = $(shell $(TF) output -raw aws_region)
 PROMPT_PARAM = $(shell $(TF) output -raw system_prompt_parameter)
@@ -26,7 +25,6 @@ SAVES       = $(PAL_DIR)/Pal/Saved
 CLONE       = /mnt/restore
 DROP_IN_DIR = /etc/systemd/system/palworld.service.d
 DROP_IN     = $(DROP_IN_DIR)/no-update.conf
-GAMEDATA_DROP_IN = $(DROP_IN_DIR)/gamedata-api.conf
 
 DESC ?= manual
 
@@ -50,11 +48,10 @@ else \
 fi
 endef
 
-# Read on the box so the admin password never reaches this machine. The
-# expansion stays inside the single-quoted --parameters below, so the local
+# The expansion stays inside the single-quoted --parameters below, so the local
 # shell leaves it alone and the instance is what evaluates it.
-PW   = $$(aws ssm get-parameter --region $(REGION) --name $(SECRET) --with-decryption --query Parameter.Value --output text | jq -r .admin_password)
-CURL = curl -fsS -u \"admin:$(PW)\"
+PASSWORD_COMMAND = $$(aws ssm get-parameter --region $(REGION) --name $(SECRET) --with-decryption --query Parameter.Value --output text | jq -r .admin_password)
+CURL = curl -fsS -u \"admin:$(PASSWORD_COMMAND)\"
 API  = http://127.0.0.1:$(REST_PORT)/v1/api
 
 # Same shape as ssm above, but the output comes back through S3. The inline
@@ -214,12 +211,6 @@ autoupdate-off: require-ssm ## Stop app_update from running on the next start
 autoupdate-on: require-ssm ## Let app_update run on start again
 	@$(call ssm,"rm -f $(DROP_IN) && systemctl daemon-reload && echo enabled")
 
-gamedata-on: require-ssm ## Expose /v1/api/game-data (restarts the game server)
-	@$(call ssm,"mkdir -p $(DROP_IN_DIR) && echo \"[Service]\" > $(GAMEDATA_DROP_IN) && echo \"ExecStart=\" >> $(GAMEDATA_DROP_IN) && echo \"ExecStart=$(PAL_DIR)/PalServer.sh -port=$(GAME_PORT) -players=$(MAX_PLAYERS) -useperfthreads -NoAsyncLoadingThread -UseMultithreadForDS -EnableGameDataAPI\" >> $(GAMEDATA_DROP_IN) && systemctl daemon-reload && systemctl restart palworld && echo enabled")
-
-gamedata-off: require-ssm ## Hide /v1/api/game-data again (restarts the game server)
-	@$(call ssm,"rm -f $(GAMEDATA_DROP_IN) && systemctl daemon-reload && systemctl restart palworld && echo disabled")
-
 ##@ Snapshots
 snapshots: ## List the snapshots of the world volume
 	@$(AWS) ec2 describe-snapshots --owner-ids self \
@@ -271,6 +262,6 @@ restore-clean: require-ssm ## Unmount the clone and delete it
 	echo "deleted $$VOL"
 
 .PHONY: help require-ssm init fmt plan apply bot-deploy bot-deploy-commands prompt prompt-deploy status start stop \
-	allowlist allow revoke session logs password autoupdate-off autoupdate-on gamedata-on gamedata-off \
+	allowlist allow revoke session logs password autoupdate-off autoupdate-on \
 	snapshots snapshot-create restore-attach restore-list restore-world restore-clean \
 	api-info api-metrics api-players api-settings api-game-data api-announce
